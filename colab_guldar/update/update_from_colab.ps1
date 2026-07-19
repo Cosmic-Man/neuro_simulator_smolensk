@@ -2,24 +2,24 @@
 USAGE
 
 Run the complete update in the current Git branch:
-    .\colab_gulnar\update\update_from_colab.ps1
+    .\colab_guldar\update\update_from_colab.ps1
 
 Run with a custom commit message:
-    .\colab_gulnar\update\update_from_colab.ps1 -CommitMessage "Update notebook"
+    .\colab_guldar\update\update_from_colab.ps1 -CommitMessage "Update notebook"
 
 If PowerShell blocks local scripts:
-    powershell -ExecutionPolicy Bypass -File .\colab_gulnar\update\update_from_colab.ps1
+    powershell -ExecutionPolicy Bypass -File .\colab_guldar\update\update_from_colab.ps1
 
 Choose the destination branch before running:
     git switch main
-    .\colab_gulnar\update\update_from_colab.ps1
+    .\colab_guldar\update\update_from_colab.ps1
 
 or:
     git switch test_maxim
-    .\colab_gulnar\update\update_from_colab.ps1
+    .\colab_guldar\update\update_from_colab.ps1
 
 The script downloads the latest Colab notebook, stages only
-"colab_gulnar/Copy of FuzzyConvolution.ipynb", creates a commit when the file changed,
+"colab_guldar/Copy of FuzzyConvolution.ipynb", creates a commit when the file changed,
 and pushes only the current branch to origin. It never pushes both branches.
 #>
 
@@ -50,18 +50,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "Repository safety audit failed; commit and push were stopped."
 }
 
-git add -- "colab_gulnar/Copy of FuzzyConvolution.ipynb"
+git add -- "colab_guldar/Copy of FuzzyConvolution.ipynb"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not stage the notebook."
 }
 
-git diff --cached --quiet -- "colab_gulnar/Copy of FuzzyConvolution.ipynb"
+git diff --cached --quiet -- "colab_guldar/Copy of FuzzyConvolution.ipynb"
 if ($LASTEXITCODE -eq 0) {
     Write-Host "The notebook has not changed; commit and push are not needed."
     exit 0
 }
 
-git commit -m $CommitMessage -- "colab_gulnar/Copy of FuzzyConvolution.ipynb"
+git commit -m $CommitMessage -- "colab_guldar/Copy of FuzzyConvolution.ipynb"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not create the commit."
 }

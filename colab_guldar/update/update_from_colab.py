@@ -1,14 +1,14 @@
 """Download the latest notebook version from the project's Colab file."""
 
 # Чтобы скачать свежую версию ноутбука из Colab:
-# python .\colab_gulnar\update\update_from_colab.py
+# python .\colab_guldar\update\update_from_colab.py
 #
 # Чтобы скачать, закоммитить и отправить обновление одной командой PowerShell:
-# .\colab_gulnar\update\update_from_colab.ps1
+# .\colab_guldar\update\update_from_colab.ps1
 # Скрипт отправляет только текущую ветку: main — в main, личную — в личную.
 #
 # То же самое вручную — сначала создать коммит:
-# git add "colab_gulnar/Copy of FuzzyConvolution.ipynb"
+# git add "colab_guldar/Copy of FuzzyConvolution.ipynb"
 # git commit -m "Update notebook from Colab"
 #
 # Вариант 1. Отправить коммит прямо в основную ветку main:
@@ -65,11 +65,11 @@ def read_env(name: str) -> str:
 def get_drive_file_id(colab_url: str) -> str:
     parts = urllib.parse.urlparse(colab_url).path.strip("/").split("/")
     if len(parts) < 2 or parts[-2] != "drive" or not parts[-1]:
-        raise RuntimeError("COLAB_GULNAR_URL is not a valid Colab Drive URL")
+        raise RuntimeError("COLAB_GULDAR_URL is not a valid Colab Drive URL")
     return parts[-1]
 
 
-FILE_ID = get_drive_file_id(read_env("COLAB_GULNAR_URL"))
+FILE_ID = get_drive_file_id(read_env("COLAB_GULDAR_URL"))
 DRIVE_HOST = ".".join(("drive", "google", "com"))
 DOWNLOAD_URL = urllib.parse.urlunparse(
     ("https", DRIVE_HOST, "/uc", "", urllib.parse.urlencode({"export": "download", "id": FILE_ID}), "")

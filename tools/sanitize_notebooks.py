@@ -14,7 +14,15 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main() -> None:
     result = subprocess.run(
-        ["git", "ls-files", "-z", "*.ipynb"],
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "*.ipynb",
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -24,6 +32,8 @@ def main() -> None:
         if not raw_path:
             continue
         path = ROOT / raw_path.decode("utf-8")
+        if not path.is_file():
+            continue
         notebook = json.loads(path.read_text(encoding="utf-8"))
         sanitize_notebook(notebook)
         path.write_text(

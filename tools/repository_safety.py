@@ -27,7 +27,14 @@ SENSITIVE_METADATA_KEYS = {
 
 def tracked_files() -> list[Path]:
     result = subprocess.run(
-        ["git", "ls-files", "-z"],
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -83,6 +90,8 @@ def main() -> int:
 
     for path in tracked_files():
         relative = path.relative_to(ROOT)
+        if not path.is_file():
+            continue
         if path.name in FORBIDDEN_NAMES or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"{relative}: forbidden tracked data file")
             continue
