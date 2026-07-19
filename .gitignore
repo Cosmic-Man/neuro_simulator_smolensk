@@ -2,3 +2,4 @@
 .ipynb_checkpoints/
 *.csv
 *.xlsx
+update_from_colab.py
