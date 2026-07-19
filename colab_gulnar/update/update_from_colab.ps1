@@ -45,6 +45,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Could not download the notebook from Colab."
 }
 
+& $python (Join-Path $repoRoot "tools\repository_safety.py")
+if ($LASTEXITCODE -ne 0) {
+    throw "Repository safety audit failed; commit and push were stopped."
+}
+
 git add -- "colab_gulnar/Copy of FuzzyConvolution.ipynb"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not stage the notebook."

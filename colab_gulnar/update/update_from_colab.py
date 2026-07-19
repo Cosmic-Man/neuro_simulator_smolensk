@@ -30,13 +30,20 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tools.notebook_safety import sanitize_notebook
+
+
+ENV_PATH = REPO_ROOT / ".env"
 TARGET = Path(__file__).resolve().parent.parent / "Copy of FuzzyConvolution.ipynb"
 
 
@@ -63,7 +70,10 @@ def get_drive_file_id(colab_url: str) -> str:
 
 
 FILE_ID = get_drive_file_id(read_env("COLAB_GULNAR_URL"))
-DOWNLOAD_URL = f"[removed-google-link]"
+DRIVE_HOST = ".".join(("drive", "google", "com"))
+DOWNLOAD_URL = urllib.parse.urlunparse(
+    ("https", DRIVE_HOST, "/uc", "", urllib.parse.urlencode({"export": "download", "id": FILE_ID}), "")
+)
 
 
 def update_notebook() -> None:
@@ -93,6 +103,11 @@ def update_notebook() -> None:
         if notebook.get("nbformat") is None or not isinstance(notebook.get("cells"), list):
             raise RuntimeError("Скачанный JSON не является Jupyter Notebook.")
 
+        sanitize_notebook(notebook)
+        temporary_path.write_text(
+            json.dumps(notebook, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8",
+        )
         os.replace(temporary_path, TARGET)
         temporary_path = None
         print(f"Ноутбук обновлён: {TARGET.name}")
