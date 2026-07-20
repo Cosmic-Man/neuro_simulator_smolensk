@@ -9,13 +9,23 @@ import pandas as pd
 
 from .config import DATA_PATH, TEST_END, TRAIN_END, TRAIN_START
 from .fuzzy import FUZZY_INDEX_SPECS, calculate_fuzzy_indices
-from .linear_index import HIERARCHICAL_FUZZY_SPECS, LINEAR_FEATURE_SPECS, LinearConvolutionIndex
+from .hierarchical_index import HierarchicalFuzzyIndex
 
 
 EXPECTED_PERIODS = [f"{year}Q{quarter}" for year in range(2006, 2026) for quarter in range(1, 5)]
 
-FEATURE_NAMES = [spec.feature for spec in LINEAR_FEATURE_SPECS]
-FEATURE_DIRECTIONS = {spec.feature: spec.direction for spec in LINEAR_FEATURE_SPECS}
+FEATURE_NAMES = [feature for index_spec in FUZZY_INDEX_SPECS for feature in index_spec.features]
+NEGATIVE_FEATURES = {
+    "дтп_10тыс_A",
+    "срок_устранения_деф_сут_A",
+    "дтп_10тыс_B",
+    "срок_устранения_деф_сут_B",
+    "срок_устранения_деф_сут_C",
+}
+FEATURE_DIRECTIONS = {
+    feature: -1 if feature in NEGATIVE_FEATURES else 1
+    for feature in FEATURE_NAMES
+}
 LOG_FEATURES = {
     "дворы_благоустроено_ед",
     "пассажиропоток_тыс_A",
@@ -129,9 +139,7 @@ class DataBundle:
     factors: pd.DataFrame
     scalers: Dict[str, TrainMinMaxScaler]
     feature_scalers: Dict[str, TrainMinMaxScaler]
-    linear_model: LinearConvolutionIndex
-    linear_contributions: pd.DataFrame
-    hierarchical_model: LinearConvolutionIndex
+    hierarchical_model: HierarchicalFuzzyIndex
     hierarchical_contributions: pd.DataFrame
     feature_metadata: list[dict[str, str]]
     source_path: Path
@@ -189,13 +197,7 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
         quality[feature] = scaler.transform(features[feature]) * 100.0
 
     fuzzy = calculate_fuzzy_indices(quality)
-    linear_model = LinearConvolutionIndex().fit(train)
-    linear_index = linear_model.transform(features)
-    linear_contributions = linear_model.contributions(features)
-    hierarchical_model = LinearConvolutionIndex(
-        HIERARCHICAL_FUZZY_SPECS,
-        name="hierarchical_fuzzy_index",
-    ).fit(fuzzy.loc[TRAIN_START:TRAIN_END])
+    hierarchical_model = HierarchicalFuzzyIndex().fit(fuzzy.loc[TRAIN_START:TRAIN_END])
     hierarchical_index = hierarchical_model.transform(fuzzy)
     hierarchical_contributions = hierarchical_model.contributions(fuzzy)
 
@@ -208,7 +210,6 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
     raw["defect_days"] = _mean(features, ["срок_устранения_деф_сут_A", "срок_устранения_деф_сут_B", "срок_устранения_деф_сут_C"])
     raw["passenger_flow"] = _mean(features, ["пассажиропоток_тыс_A", "пассажиропоток_тыс_B"])
     raw["crossings"] = _mean(features, ["переходы_регулируем_ед_A", "переходы_регулируем_ед_B"])
-    raw["linear_expert_index"] = linear_index * 100.0
     raw["hierarchical_fuzzy_index"] = hierarchical_index * 100.0
     for column in fuzzy:
         raw[column] = fuzzy[column]
@@ -267,8 +268,6 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
         factors=factors,
         scalers=scalers,
         feature_scalers=feature_scalers,
-        linear_model=linear_model,
-        linear_contributions=linear_contributions,
         hierarchical_model=hierarchical_model,
         hierarchical_contributions=hierarchical_contributions,
         feature_metadata=metadata,

@@ -101,11 +101,14 @@ function renderIndices() {
   const latestIndex = state.indices.fuzzy.map(item => ({ ...item, value: item.values[item.values.length - 1] }));
   document.getElementById("fuzzyIndexCards").innerHTML = latestIndex.map(item => `
     <article class="panel index-card"><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
-  const latestLinear = state.indices.linear[state.indices.linear.length - 1];
   const latestHierarchical = state.indices.hierarchical[state.indices.hierarchical.length - 1];
-  document.getElementById("expertIndexCards").innerHTML = `
-    <article class="panel expert-index-card"><div><span class="panel-kicker">31 исходный показатель</span><small>Линейный индекс Гульдар</small></div><strong>${formatNumber(latestLinear)}</strong></article>
+  document.getElementById("hierarchicalIndexCard").innerHTML = `
     <article class="panel expert-index-card"><div><span class="panel-kicker">8 нечётких индексов</span><small>Иерархический индекс Гульдар</small></div><strong>${formatNumber(latestHierarchical)}</strong></article>`;
+  document.getElementById("fuzzySourceList").innerHTML = state.indices.fuzzy.map((item, index) => `
+    <section class="fuzzy-source-item">
+      <div class="fuzzy-source-heading"><span>${index + 1}</span><strong>${item.label}</strong></div>
+      <ul>${item.features.map(feature => `<li><code>${feature}</code></li>`).join("")}</ul>
+    </section>`).join("");
   fillSelect(document.getElementById("fuzzyIndexSelect"), state.indices.fuzzy);
   renderFuzzyIndexPlot();
   const contributionRows = items => {
@@ -113,7 +116,6 @@ function renderIndices() {
     return items.map(item => `
       <div class="contribution-row" title="${item.label}"><span>${item.label}</span><div class="contribution-track"><div class="contribution-fill" style="width:${Math.abs(item.value) / max * 100}%"></div></div><strong>${formatNumber(item.value, 3)}</strong></div>`).join("");
   };
-  document.getElementById("linearContributions").innerHTML = contributionRows(state.indices.top_contributions);
   document.getElementById("hierarchicalContributions").innerHTML = contributionRows(state.indices.hierarchical_contributions);
   const stats = state.indices.hierarchical_stats;
   document.getElementById("hierarchicalStats").innerHTML = [
@@ -127,8 +129,7 @@ function renderFuzzyIndexPlot() {
   const item = state.indices.fuzzy.find(index => index.id === id);
   Plotly.react("fuzzyIndexPlot", [
     { x: state.indices.periods, y: item.values, name: item.label, type: "scatter", mode: "lines", line: { color: colors.teal, width: 2.5 } },
-    { x: state.indices.periods, y: state.indices.linear, name: "Гульдар · 31 показатель", type: "scatter", mode: "lines", line: { color: colors.gold, width: 2 } },
-    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2 } },
+    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "solid" } },
   ], { ...baseLayout, margin: { l: 50, r: 16, t: 24, b: 46 }, yaxis: { ...baseLayout.yaxis, range: [0, 100], title: "баллы" } }, plotConfig);
 }
 

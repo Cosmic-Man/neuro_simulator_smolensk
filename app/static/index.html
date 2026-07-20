@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Локальный нейросимулятор транспортной доступности и безопасности Смоленска">
   <title>Нейросимулятор Смоленска · Проблема Б</title>
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260720-6">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js"></script>
+  <script defer src="/assets/app.js?v=20260720-6"></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -98,24 +98,29 @@
     <section id="indices" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">03</span><h2>Нечёткие и экспертные индексы</h2></div>
-        <p>Восемь свёрток Кирилла и два экспертных baseline Гульдар</p>
+        <p>Восемь нечётких свёрток и единый иерархический baseline Гульдар</p>
       </div>
       <div id="fuzzyIndexCards" class="index-grid"></div>
-      <div id="expertIndexCards" class="expert-index-grid"></div>
+      <div id="hierarchicalIndexCard" class="hierarchical-index-summary"></div>
+      <article class="panel fuzzy-source-panel">
+        <span class="panel-kicker">Исходные данные</span>
+        <h3>Столбцы датасета для восьми нечётких индексов</h3>
+        <p class="chart-description">Под каждым индексом перечислены точные технические имена столбцов исходного Excel-датасета. Перед нечёткой свёрткой значения нормализуются по обучающему периоду и приводятся к шкале качества от 0 до 100.</p>
+        <div id="fuzzySourceList" class="fuzzy-source-list"></div>
+      </article>
       <div class="source-grid index-analysis">
         <article class="panel chart-panel">
           <div class="panel-toolbar"><div><span class="panel-kicker">Динамика</span><h3>Частные индексы</h3></div><label>Индекс<select id="fuzzyIndexSelect"></select></label></div>
-          <div id="fuzzyIndexPlot" class="plot"></div>
+          <p class="chart-description">
+            График показывает поквартальную динамику выбранного частного нечёткого индекса и сопоставляет её с интегральной оценкой Гульдар. Бирюзовая линия отражает выбранный в списке частный индекс, а коралловая — иерархический индекс, объединяющий все восемь нечётких индексов. Все значения приведены к единой шкале от 0 до 100 баллов: более высокий уровень соответствует более благоприятному состоянию городской мобильности. Совпадающее направление линий указывает на общий системный тренд, а заметное расхождение помогает увидеть периоды, когда изменение отдельной сферы не совпадало с динамикой комплексной оценки.
+          </p>
+          <div id="fuzzyIndexPlot" class="plot" aria-label="Поквартальное сравнение выбранного частного индекса с иерархическим индексом Гульдар"></div>
         </article>
         <article class="panel contribution-panel">
           <span class="panel-kicker">8 нечётких индексов → один baseline</span>
           <h3>Иерархический индекс Гульдар</h3>
           <div id="hierarchicalStats" class="index-stat-grid"></div>
           <div id="hierarchicalContributions" class="contribution-list"></div>
-          <div class="contribution-divider"></div>
-          <span class="panel-kicker">31 исходный показатель → один baseline</span>
-          <h3>Линейный индекс Гульдар</h3>
-          <div id="linearContributions" class="contribution-list"></div>
         </article>
       </div>
     </section>

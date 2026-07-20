@@ -27,6 +27,7 @@ class DataPipelineTests(unittest.TestCase):
         self.assertEqual(int((periods >= "2023Q1").sum()), 12)
 
     def test_fuzzy_indices_and_factors_are_finite_and_bounded(self) -> None:
+        self.assertNotIn("linear_expert_index", self.bundle.raw.columns)
         self.assertEqual(self.bundle.fuzzy_indices.shape, (80, 8))
         self.assertTrue(np.isfinite(self.bundle.fuzzy_indices.to_numpy()).all())
         self.assertGreaterEqual(float(self.bundle.fuzzy_indices.min().min()), 0.0)
