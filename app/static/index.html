@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Локальный нейросимулятор транспортной доступности и безопасности Смоленска">
+  <title>Нейросимулятор Смоленска · Проблема Б</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script defer src="/assets/vendor/plotly.min.js"></script>
+  <script defer src="/assets/vendor/cytoscape.min.js"></script>
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <header class="hero shell">
+    <nav class="topbar">
+      <a class="brand" href="#overview" aria-label="К началу страницы">
+        <span class="brand-mark">СМ</span>
+        <span><strong>Нейросимулятор</strong><small>Смоленск · проблема Б</small></span>
+      </a>
+      <div class="nav-links">
+        <a href="#history">Данные</a>
+        <a href="#models">Модели</a>
+        <a href="#map">FCM</a>
+        <a href="#scenarios">Сценарии</a>
+      </div>
+      <div id="apiStatus" class="status-pill"><span></span>Подключение…</div>
+    </nav>
+
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Аналитический прототип · 2006–2025</div>
+        <h1>Транспортная доступность<br><em>и безопасность города</em></h1>
+        <p class="hero-copy">Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="#scenarios">Запустить сценарий</a>
+          <a class="text-button" href="#map">Открыть карту связей <span>→</span></a>
+        </div>
+      </div>
+      <aside class="method-card">
+        <div class="method-badge">FCM × ANFIS</div>
+        <p>Экспертные причинные связи уточняются закономерностями данных, но не теряют исходный смысл и знак.</p>
+        <dl>
+          <div><dt id="nodeCount">17</dt><dd>узлов</dd></div>
+          <div><dt id="edgeCount">37</dt><dd>связей</dd></div>
+          <div><dt>7</dt><dd>сценариев</dd></div>
+        </dl>
+      </aside>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="overview" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">01</span><h2>Состояние на последний квартал</h2></div>
+        <p id="latestPeriod">Загрузка данных…</p>
+      </div>
+      <div id="kpiGrid" class="kpi-grid"></div>
+      <div class="source-grid">
+        <article class="panel source-panel">
+          <span class="panel-kicker">Источник</span>
+          <h3>Пять муниципальных программ</h3>
+          <p>Дорожный комплекс, наружное освещение, общественный транспорт, безопасность движения и вело-пешеходная инфраструктура.</p>
+          <div id="sheetTags" class="tag-row"></div>
+        </article>
+        <article class="panel proxy-panel">
+          <span class="panel-kicker">Прозрачные допущения</span>
+          <h3>Как получены прокси-показатели</h3>
+          <div id="proxyList" class="proxy-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="history" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">02</span><h2>История и сезонность</h2></div>
+        <p>Train, validation и test показаны без перемешивания времени</p>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-toolbar">
+          <div><span class="panel-kicker">Временной ряд</span><h3 id="historyTitle">Историческая динамика</h3></div>
+          <label>Показатель<select id="historyMetric"></select></label>
+        </div>
+        <div id="historyPlot" class="plot plot-large" aria-label="График исторической динамики"></div>
+      </div>
+      <div class="panel chart-panel compact-chart">
+        <div class="panel-toolbar">
+          <div><span class="panel-kicker">Квартальный профиль</span><h3>Среднее значение по кварталам</h3></div>
+          <span class="quiet-note">Все 80 наблюдений</span>
+        </div>
+        <div id="seasonPlot" class="plot" aria-label="График сезонности"></div>
+      </div>
+    </section>
+
+    <section id="models" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">03</span><h2>Сравнение моделей</h2></div>
+        <p>Тест 2023Q1–2025Q4 не участвует в обучении и настройке</p>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-toolbar toolbar-wrap">
+          <div><span class="panel-kicker">Прогноз на один квартал</span><h3>Факт и прогнозы</h3></div>
+          <div class="control-row">
+            <label>Цель<select id="evaluationTarget"></select></label>
+            <label>Выборка<select id="evaluationSplit"><option value="test">Тест</option><option value="validation">Валидация</option></select></label>
+          </div>
+        </div>
+        <div id="evaluationPlot" class="plot plot-large" aria-label="Сравнение прогнозов"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Модель</th><th>MAE</th><th>RMSE</th><th>sMAPE</th><th>MASE</th><th>Направление</th></tr></thead>
+            <tbody id="metricsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="anfisCards" class="model-grid"></div>
+    </section>
+
+    <section id="map" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">04</span><h2>Нечёткая когнитивная карта</h2></div>
+        <p>Зелёные связи усиливают, красные — ослабляют</p>
+      </div>
+      <div class="panel map-panel">
+        <div class="panel-toolbar">
+          <div><span class="panel-kicker">Интерактивная FCM</span><h3>Причинные связи проблемы Б</h3></div>
+          <label>Веса<select id="fcmMode"><option value="adapted">Адаптированные</option><option value="expert">Экспертные</option></select></label>
+        </div>
+        <div class="map-layout">
+          <div id="fcmGraph" aria-label="Граф когнитивной карты"></div>
+          <aside id="edgeInspector" class="edge-inspector">
+            <span class="panel-kicker">Инспектор связи</span>
+            <h3>Выберите стрелку</h3>
+            <p>Здесь появятся экспертный вес, оценка из данных и итоговый адаптированный вес.</p>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="scenarios" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">05</span><h2>Лаборатория сценариев</h2></div>
+        <p>Импульсы действуют на каждом квартальном шаге FCM</p>
+      </div>
+      <div class="scenario-layout">
+        <aside class="panel scenario-controls">
+          <div><span class="panel-kicker">Настройки</span><h3>Управляющие воздействия</h3></div>
+          <label>Готовый сценарий<select id="scenarioPreset"></select></label>
+          <p id="scenarioDescription" class="control-description"></p>
+          <div class="control-row">
+            <label>Модель<select id="scenarioMode"><option value="adapted">FCM + ANFIS</option><option value="expert">Экспертная FCM</option></select></label>
+            <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
+          </div>
+          <div class="slider-heading"><span>Дополнительные импульсы</span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
+          <div id="scenarioSliders" class="slider-list"></div>
+          <button id="runScenario" class="primary-button full-button" type="button">Рассчитать сценарий</button>
+        </aside>
+        <div class="scenario-results">
+          <div class="scenario-chart-grid">
+            <article class="panel mini-chart-panel"><span class="panel-kicker">Безопасность</span><div id="safetyPlot" class="plot"></div></article>
+            <article class="panel mini-chart-panel"><span class="panel-kicker">Регулярность</span><div id="regularityPlot" class="plot"></div></article>
+            <article class="panel mini-chart-panel wide"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
+          </div>
+          <article class="panel explanation-panel">
+            <span class="panel-kicker">Объяснение результата</span>
+            <h3 id="scenarioResultTitle">Инерционный сценарий</h3>
+            <ul id="scenarioExplanation"><li>Запустите расчёт, чтобы увидеть интерпретацию.</li></ul>
+            <div id="appliedImpulses" class="tag-row"></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="sensitivity" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">06</span><h2>Чувствительность</h2></div>
+        <p>Эффект постоянного импульса +0,07 на горизонте восьми кварталов</p>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-toolbar">
+          <div><span class="panel-kicker">Рейтинг факторов</span><h3>Что сильнее меняет результат</h3></div>
+          <label>Цель<select id="sensitivityTarget"></select></label>
+        </div>
+        <div id="sensitivityPlot" class="plot plot-large"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell footer">
+    <span>Локальный прототип · проблема Б</span>
+    <span>Нормализация обучена только на train · <a href="/docs" target="_blank" rel="noreferrer">API</a></span>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
+
