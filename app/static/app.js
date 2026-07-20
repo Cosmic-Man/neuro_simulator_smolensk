@@ -100,7 +100,7 @@ function renderHistory() {
 function renderIndices() {
   const latestIndex = state.indices.fuzzy.map(item => ({ ...item, value: item.values[item.values.length - 1] }));
   document.getElementById("fuzzyIndexCards").innerHTML = latestIndex.map(item => `
-    <article class="panel index-card"><span class="panel-kicker">Fuzzy</span><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
+    <article class="panel index-card"><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
   fillSelect(document.getElementById("fuzzyIndexSelect"), state.indices.fuzzy);
   renderFuzzyIndexPlot();
   const max = Math.max(...state.indices.top_contributions.map(item => item.value), 0.001);
@@ -261,11 +261,28 @@ async function runScenario() {
 function renderSensitivity() {
   const targetId = document.getElementById("sensitivityTarget").value;
   const items = state.evaluation.sensitivity[targetId].slice(0, 10).reverse();
+  const maxEffect = Math.max(...items.map(item => Math.abs(item.delta_index_points)), 0.01);
   Plotly.react("sensitivityPlot", [{
     x: items.map(item => item.delta_index_points), y: items.map(item => item.label), type: "bar", orientation: "h",
     marker: { color: items.map(item => item.delta_index_points >= 0 ? colors.teal : colors.coral) },
+    text: items.map(item => `${item.delta_index_points >= 0 ? "+" : ""}${item.delta_index_points.toFixed(3)}`),
+    textposition: "outside", cliponaxis: false,
     hovertemplate: "%{y}<br>%{x:+.3f} п.п.<extra></extra>",
-  }], { ...baseLayout, showlegend: false, margin: { l: 220, r: 28, t: 12, b: 48 }, xaxis: { ...baseLayout.xaxis, title: "Изменение целевого индекса, п.п." } }, plotConfig);
+  }], {
+    ...baseLayout,
+    height: 430,
+    showlegend: false,
+    margin: { l: 235, r: 62, t: 12, b: 52 },
+    xaxis: {
+      type: "linear", range: [-maxEffect * 1.25, maxEffect * 1.25],
+      title: "Изменение целевого индекса, п.п.", gridcolor: colors.grid,
+      zeroline: true, zerolinecolor: colors.ink, zerolinewidth: 1,
+    },
+    yaxis: {
+      type: "category", categoryorder: "array", categoryarray: items.map(item => item.label),
+      automargin: true, gridcolor: "rgba(0,0,0,0)", zeroline: false,
+    },
+  }, plotConfig);
 }
 
 function bindEvents() {
@@ -302,4 +319,3 @@ async function initialize() {
 }
 
 window.addEventListener("DOMContentLoaded", initialize);
-
