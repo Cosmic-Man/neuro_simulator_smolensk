@@ -6,3 +6,4 @@
 /datasets/smolensk_dataset_shared.xlsx
 __pycache__/
 *.py[cod]
+.agents/
