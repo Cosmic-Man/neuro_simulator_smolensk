@@ -6,7 +6,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = Path(
-    os.getenv("SMOLENSK_DATA_PATH", PROJECT_ROOT / "data" / "smolensk_development.xlsx")
+    os.getenv(
+        "SMOLENSK_DATA_PATH",
+        PROJECT_ROOT / "datasets_ready" / "smolensk_dataset_shared.xlsx",
+    )
 )
 STATIC_DIR = PROJECT_ROOT / "app" / "static"
 
