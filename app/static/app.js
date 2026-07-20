@@ -127,8 +127,8 @@ function renderFuzzyIndexPlot() {
   const item = state.indices.fuzzy.find(index => index.id === id);
   Plotly.react("fuzzyIndexPlot", [
     { x: state.indices.periods, y: item.values, name: item.label, type: "scatter", mode: "lines", line: { color: colors.teal, width: 2.5 } },
-    { x: state.indices.periods, y: state.indices.linear, name: "Гульдар · 31 показатель", type: "scatter", mode: "lines", line: { color: colors.gold, width: 2, dash: "dot" } },
-    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "dash" } },
+    { x: state.indices.periods, y: state.indices.linear, name: "Гульдар · 31 показатель", type: "scatter", mode: "lines", line: { color: colors.gold, width: 2 } },
+    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2 } },
   ], { ...baseLayout, margin: { l: 50, r: 16, t: 24, b: 46 }, yaxis: { ...baseLayout.yaxis, range: [0, 100], title: "баллы" } }, plotConfig);
 }
 

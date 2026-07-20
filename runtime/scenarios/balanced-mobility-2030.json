@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "balanced-mobility-2030",
+  "label": "Сбалансированная мобильность — 2030",
+  "description": "Синтетический сценарий согласованного улучшения дорожной инфраструктуры, общественного транспорта и безопасности. Предполагает умеренный рост исполнения программ, ремонта дорог, регулярности движения и числа регулируемых переходов.",
+  "mode": "adapted",
+  "horizon": 12,
+  "impulses": {
+    "road_budget_execution": 0.12,
+    "transit_budget_execution": 0.14,
+    "safety_budget_execution": 0.1,
+    "road_repair": 0.11,
+    "transport_regularity": 0.09,
+    "average_speed": 0.06,
+    "crossings": 0.08,
+    "congestion": -0.07
+  }
+}
