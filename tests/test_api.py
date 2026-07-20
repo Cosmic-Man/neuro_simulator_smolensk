@@ -19,6 +19,11 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, path)
         self.assertEqual(self.client.get("/api/health").json()["periods"], 80)
         self.assertGreater(self.client.get("/api/health").json()["initialization_seconds"], 0.0)
+        indices = self.client.get("/api/indices").json()
+        self.assertEqual(len(indices["hierarchical"]), 80)
+        self.assertEqual(len(indices["hierarchical_contributions"]), 8)
+        self.assertEqual(len(indices["hierarchical_weights"]), 8)
+        self.assertIn("latest", indices["hierarchical_stats"])
 
     def test_simulation_contract(self) -> None:
         response = self.client.post(

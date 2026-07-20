@@ -268,6 +268,7 @@ class ProblemBService:
             ("accessibility", "Транспортная доступность", "баллы", "target"),
             ("integrated_mobility", "Итоговый индекс мобильности", "баллы", "target"),
             ("linear_expert_index", "Линейный экспертный индекс", "баллы", "baseline"),
+            ("hierarchical_fuzzy_index", "Иерархический экспертный индекс Гульдар", "баллы", "baseline"),
             ("avg_speed", "Средняя скорость", "км/ч", "indicator"),
             ("road_condition", "Дороги в нормативном состоянии", "%", "indicator"),
             ("road_repair", "Отремонтированные дороги", "км", "control"),
@@ -279,7 +280,18 @@ class ProblemBService:
             {"id": series_id, "label": label, "unit": unit, "role": role, "values": [round(float(value), 5) for value in self.bundle.raw[series_id]]}
             for series_id, label, unit, role in definitions
         ]
-        latest = {key: round(float(self.bundle.raw.iloc[-1][key]), 2) for key in ("accidents", "regularity", "accessibility", "traffic_safety", "integrated_mobility", "linear_expert_index")}
+        latest = {
+            key: round(float(self.bundle.raw.iloc[-1][key]), 2)
+            for key in (
+                "accidents",
+                "regularity",
+                "accessibility",
+                "traffic_safety",
+                "integrated_mobility",
+                "linear_expert_index",
+                "hierarchical_fuzzy_index",
+            )
+        }
         latest["period"] = periods[-1]
         return {"periods": periods, "split": split, "series": series, "latest": latest}
 
@@ -287,6 +299,9 @@ class ProblemBService:
         latest_contributions = self.bundle.linear_contributions.iloc[-1].drop("linear_expert_index")
         top = latest_contributions.sort_values(ascending=False).head(10)
         label_by_id = {item["id"]: item["label"] for item in self.bundle.feature_metadata}
+        fuzzy_label_by_id = {spec.id: spec.label for spec in FUZZY_INDEX_SPECS}
+        hierarchical_contributions = self.bundle.hierarchical_contributions.iloc[-1].drop("hierarchical_fuzzy_index")
+        hierarchical = self.bundle.raw["hierarchical_fuzzy_index"]
         return {
             "periods": self.bundle.raw.index.to_list(),
             "fuzzy": [
@@ -294,11 +309,29 @@ class ProblemBService:
                 for spec in FUZZY_INDEX_SPECS
             ],
             "linear": [round(float(value), 5) for value in self.bundle.raw["linear_expert_index"]],
+            "hierarchical": [round(float(value), 5) for value in hierarchical],
+            "hierarchical_stats": {
+                "minimum": round(float(hierarchical.min()), 5),
+                "maximum": round(float(hierarchical.max()), 5),
+                "mean": round(float(hierarchical.mean()), 5),
+                "median": round(float(hierarchical.median()), 5),
+                "std": round(float(hierarchical.std()), 5),
+                "latest": round(float(hierarchical.iloc[-1]), 5),
+            },
             "top_contributions": [
                 {"feature": feature, "label": label_by_id.get(feature, feature), "value": round(float(value), 6)}
                 for feature, value in top.items()
             ],
             "weights": self.bundle.linear_model.weights_table(label_by_id).to_dict(orient="records"),
+            "hierarchical_contributions": [
+                {
+                    "feature": feature,
+                    "label": fuzzy_label_by_id.get(feature, feature),
+                    "value": round(float(value), 6),
+                }
+                for feature, value in hierarchical_contributions.sort_values(ascending=False).items()
+            ],
+            "hierarchical_weights": self.bundle.hierarchical_model.weights_table(fuzzy_label_by_id).to_dict(orient="records"),
         }
 
     def fcm(self, mode: str) -> dict[str, object]:

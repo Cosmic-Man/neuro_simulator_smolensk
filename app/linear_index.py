@@ -48,12 +48,29 @@ LINEAR_FEATURE_SPECS = (
     LinearFeatureSpec("срок_устранения_деф_сут_C", 0.3, -1),
 )
 
+HIERARCHICAL_FUZZY_SPECS = (
+    LinearFeatureSpec("urban_environment", 0.6, 1),
+    LinearFeatureSpec("road_quality_dtc", 0.6, 1),
+    LinearFeatureSpec("road_wellbeing_dtc", 0.7, 1),
+    LinearFeatureSpec("accessible_environment", 0.2, 1),
+    LinearFeatureSpec("public_spaces", 0.5, 1),
+    LinearFeatureSpec("road_quality_transit", 0.7, 1),
+    LinearFeatureSpec("road_wellbeing_transit", 0.9, 1),
+    LinearFeatureSpec("parking_safety", 0.4, 1),
+)
+
 
 class LinearConvolutionIndex:
     """Версия линейной экспертной свёртки Гульдар без утечки test."""
 
-    def __init__(self, specs: tuple[LinearFeatureSpec, ...] = LINEAR_FEATURE_SPECS):
+    def __init__(
+        self,
+        specs: tuple[LinearFeatureSpec, ...] = LINEAR_FEATURE_SPECS,
+        *,
+        name: str = "linear_expert_index",
+    ):
         self.specs = specs
+        self.name = name
         self.feature_names = [spec.feature for spec in specs]
         raw_weights = np.asarray([spec.weight for spec in specs], dtype=float)
         if np.any(raw_weights < 0.0) or raw_weights.sum() <= 0.0:
@@ -87,7 +104,7 @@ class LinearConvolutionIndex:
     def transform(self, frame: pd.DataFrame) -> pd.Series:
         normalized = self.normalize(frame)
         values = normalized.to_numpy(dtype=float) @ self.weights
-        return pd.Series(values, index=frame.index, name="linear_expert_index")
+        return pd.Series(values, index=frame.index, name=self.name)
 
     def fit_transform(self, frame: pd.DataFrame) -> pd.Series:
         return self.fit(frame).transform(frame)
@@ -95,7 +112,7 @@ class LinearConvolutionIndex:
     def contributions(self, frame: pd.DataFrame) -> pd.DataFrame:
         normalized = self.normalize(frame)
         contributions = normalized.mul(self.weights, axis=1)
-        contributions["linear_expert_index"] = contributions.sum(axis=1)
+        contributions[self.name] = contributions.sum(axis=1)
         return contributions
 
     def weights_table(self, labels: Mapping[str, str] | None = None) -> pd.DataFrame:

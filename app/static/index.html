@@ -98,17 +98,23 @@
     <section id="indices" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">03</span><h2>Нечёткие и экспертные индексы</h2></div>
-        <p>Восемь свёрток Кирилла и линейный индекс Гульдар по 31 показателю</p>
+        <p>Восемь свёрток Кирилла и два экспертных baseline Гульдар</p>
       </div>
       <div id="fuzzyIndexCards" class="index-grid"></div>
+      <div id="expertIndexCards" class="expert-index-grid"></div>
       <div class="source-grid index-analysis">
         <article class="panel chart-panel">
           <div class="panel-toolbar"><div><span class="panel-kicker">Динамика</span><h3>Частные индексы</h3></div><label>Индекс<select id="fuzzyIndexSelect"></select></label></div>
           <div id="fuzzyIndexPlot" class="plot"></div>
         </article>
         <article class="panel contribution-panel">
-          <span class="panel-kicker">Линейная свёртка</span>
-          <h3>Главные вклады последнего квартала</h3>
+          <span class="panel-kicker">8 нечётких индексов → один baseline</span>
+          <h3>Иерархический индекс Гульдар</h3>
+          <div id="hierarchicalStats" class="index-stat-grid"></div>
+          <div id="hierarchicalContributions" class="contribution-list"></div>
+          <div class="contribution-divider"></div>
+          <span class="panel-kicker">31 исходный показатель → один baseline</span>
+          <h3>Линейный индекс Гульдар</h3>
           <div id="linearContributions" class="contribution-list"></div>
         </article>
       </div>

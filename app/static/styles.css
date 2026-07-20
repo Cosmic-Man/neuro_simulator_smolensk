@@ -112,10 +112,19 @@ th { color: var(--muted); font-size: 10px; letter-spacing: .09em; text-transform
 .index-card { padding: 20px; }
 .index-card strong { display: block; margin-top: 0; font: 500 34px Georgia, serif; }
 .index-card small { color: var(--muted); }
+.expert-index-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
+.expert-index-card { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; padding: 20px 24px; }
+.expert-index-card strong { font: 500 34px Georgia, serif; }
+.expert-index-card small { display: block; color: var(--muted); }
 .index-analysis { align-items: stretch; }
 .index-analysis .chart-panel { margin: 0; }
 .contribution-panel { padding: 26px; }
 .contribution-list { display: grid; gap: 10px; margin-top: 18px; }
+.contribution-divider { height: 1px; margin: 24px 0; background: var(--line); }
+.index-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 14px; }
+.index-stat-grid div { padding: 8px; border-radius: 10px; background: rgba(17,42,43,.045); }
+.index-stat-grid span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.index-stat-grid strong { font-size: 13px; }
 .contribution-row { display: grid; grid-template-columns: minmax(130px, 1fr) 1.2fr 52px; gap: 10px; align-items: center; font-size: 11px; }
 .contribution-row span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contribution-track { height: 7px; border-radius: 999px; background: rgba(17,42,43,.08); overflow: hidden; }
@@ -187,7 +196,7 @@ input[type="range"] { width: 100%; accent-color: var(--teal); }
   .section-heading, .panel-toolbar, .toolbar-wrap { align-items: flex-start; flex-direction: column; }
   .section-heading p { text-align: left; }
   .kpi-grid, .scenario-chart-grid { grid-template-columns: 1fr; }
-  .index-grid { grid-template-columns: 1fr; }
+  .index-grid, .expert-index-grid { grid-template-columns: 1fr; }
   .mini-chart-panel.wide { grid-column: auto; }
   .control-row { width: 100%; flex-direction: column; align-items: stretch; }
   .control-row label, select { width: 100%; }

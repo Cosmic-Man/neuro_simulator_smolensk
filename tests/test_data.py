@@ -47,7 +47,15 @@ class DataPipelineTests(unittest.TestCase):
         expected = self.bundle.factors[["traffic_safety", "transport_regularity", "transport_accessibility"]].mean(axis=1) * 100.0
         np.testing.assert_allclose(self.bundle.raw["integrated_mobility"], expected)
 
+    def test_hierarchical_index_uses_train_only_bounds(self) -> None:
+        index = self.bundle.raw["hierarchical_fuzzy_index"]
+        self.assertTrue(np.isfinite(index.to_numpy()).all())
+        self.assertGreaterEqual(float(index.min()), 0.0)
+        self.assertLessEqual(float(index.max()), 100.0)
+        train = self.bundle.fuzzy_indices.loc[:TRAIN_END, self.bundle.hierarchical_model.feature_names]
+        np.testing.assert_allclose(self.bundle.hierarchical_model.minimum_, train.min())
+        np.testing.assert_allclose(self.bundle.hierarchical_model.maximum_, train.max())
+
 
 if __name__ == "__main__":
     unittest.main()
-

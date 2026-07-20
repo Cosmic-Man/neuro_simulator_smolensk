@@ -6,6 +6,7 @@ import numpy as np
 
 from app.data import load_problem_b_data
 from app.fuzzy import FUZZY_INDEX_SPECS, build_fuzzy_system, trapmf, trimf
+from app.linear_index import HIERARCHICAL_FUZZY_SPECS
 
 
 class FuzzyAndLinearTests(unittest.TestCase):
@@ -28,6 +29,16 @@ class FuzzyAndLinearTests(unittest.TestCase):
         expected = contributions.drop(columns="linear_expert_index").sum(axis=1)
         np.testing.assert_allclose(contributions["linear_expert_index"], expected)
         np.testing.assert_allclose(contributions["linear_expert_index"] * 100.0, self.bundle.raw["linear_expert_index"])
+
+    def test_hierarchical_weights_and_contributions(self) -> None:
+        self.assertEqual([spec.weight for spec in HIERARCHICAL_FUZZY_SPECS], [0.6, 0.6, 0.7, 0.2, 0.5, 0.7, 0.9, 0.4])
+        contributions = self.bundle.hierarchical_contributions
+        expected = contributions.drop(columns="hierarchical_fuzzy_index").sum(axis=1)
+        np.testing.assert_allclose(contributions["hierarchical_fuzzy_index"], expected)
+        np.testing.assert_allclose(
+            contributions["hierarchical_fuzzy_index"] * 100.0,
+            self.bundle.raw["hierarchical_fuzzy_index"],
+        )
 
 
 if __name__ == "__main__":

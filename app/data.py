@@ -9,7 +9,7 @@ import pandas as pd
 
 from .config import DATA_PATH, TEST_END, TRAIN_END, TRAIN_START
 from .fuzzy import FUZZY_INDEX_SPECS, calculate_fuzzy_indices
-from .linear_index import LINEAR_FEATURE_SPECS, LinearConvolutionIndex
+from .linear_index import HIERARCHICAL_FUZZY_SPECS, LINEAR_FEATURE_SPECS, LinearConvolutionIndex
 
 
 EXPECTED_PERIODS = [f"{year}Q{quarter}" for year in range(2006, 2026) for quarter in range(1, 5)]
@@ -131,6 +131,8 @@ class DataBundle:
     feature_scalers: Dict[str, TrainMinMaxScaler]
     linear_model: LinearConvolutionIndex
     linear_contributions: pd.DataFrame
+    hierarchical_model: LinearConvolutionIndex
+    hierarchical_contributions: pd.DataFrame
     feature_metadata: list[dict[str, str]]
     source_path: Path
 
@@ -190,6 +192,12 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
     linear_model = LinearConvolutionIndex().fit(train)
     linear_index = linear_model.transform(features)
     linear_contributions = linear_model.contributions(features)
+    hierarchical_model = LinearConvolutionIndex(
+        HIERARCHICAL_FUZZY_SPECS,
+        name="hierarchical_fuzzy_index",
+    ).fit(fuzzy.loc[TRAIN_START:TRAIN_END])
+    hierarchical_index = hierarchical_model.transform(fuzzy)
+    hierarchical_contributions = hierarchical_model.contributions(fuzzy)
 
     raw = features.copy()
     raw["accidents"] = _mean(features, ["дтп_10тыс_A", "дтп_10тыс_B"])
@@ -201,6 +209,7 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
     raw["passenger_flow"] = _mean(features, ["пассажиропоток_тыс_A", "пассажиропоток_тыс_B"])
     raw["crossings"] = _mean(features, ["переходы_регулируем_ед_A", "переходы_регулируем_ед_B"])
     raw["linear_expert_index"] = linear_index * 100.0
+    raw["hierarchical_fuzzy_index"] = hierarchical_index * 100.0
     for column in fuzzy:
         raw[column] = fuzzy[column]
 
@@ -260,7 +269,8 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
         feature_scalers=feature_scalers,
         linear_model=linear_model,
         linear_contributions=linear_contributions,
+        hierarchical_model=hierarchical_model,
+        hierarchical_contributions=hierarchical_contributions,
         feature_metadata=metadata,
         source_path=path,
     )
-
