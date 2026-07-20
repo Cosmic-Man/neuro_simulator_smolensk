@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+import tracemalloc
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
@@ -8,21 +10,37 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import STATIC_DIR
+from .scenarios import ScenarioConflictError
 from .service import ProblemBService
 
 
 class SimulateRequest(BaseModel):
     scenario: str = "inertial"
+    mode: Literal["expert", "adapted"] | None = None
+    horizon: int | None = Field(default=None, ge=1, le=20)
+    impulses: dict[str, float] = Field(default_factory=dict)
+
+
+class ScenarioPayload(BaseModel):
+    version: int = 1
+    id: str
+    label: str
+    description: str = ""
     mode: Literal["expert", "adapted"] = "adapted"
     horizon: int = Field(default=8, ge=1, le=20)
     impulses: dict[str, float] = Field(default_factory=dict)
 
 
+tracemalloc.start()
+_initialization_started = time.perf_counter()
 service = ProblemBService()
+INITIALIZATION_SECONDS = time.perf_counter() - _initialization_started
+_, INITIALIZATION_PEAK_BYTES = tracemalloc.get_traced_memory()
+tracemalloc.stop()
 app = FastAPI(
     title="Нейросимулятор Смоленска — проблема Б",
-    description="Локальный аналитический прототип транспортной доступности и безопасности.",
-    version="0.1.0-local",
+    description="Объяснимая модель транспортной доступности и безопасности городской мобильности.",
+    version="0.2.0-local",
 )
 app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
@@ -41,9 +59,12 @@ def favicon() -> Response:
 def health() -> dict[str, object]:
     return {
         "status": "ok",
-        "problem": "B",
+        "problem": "Б",
         "periods": len(service.bundle.raw),
+        "features": len(service.bundle.features.columns),
         "models_ready": True,
+        "initialization_seconds": round(INITIALIZATION_SECONDS, 4),
+        "initialization_peak_mb": round(INITIALIZATION_PEAK_BYTES / 1024 / 1024, 2),
     }
 
 
@@ -57,6 +78,11 @@ def history() -> dict[str, object]:
     return service.history()
 
 
+@app.get("/api/indices")
+def indices() -> dict[str, object]:
+    return service.indices()
+
+
 @app.get("/api/fcm")
 def fcm(mode: Literal["expert", "adapted"] = Query(default="adapted")) -> dict[str, object]:
     return service.fcm(mode)
@@ -65,6 +91,21 @@ def fcm(mode: Literal["expert", "adapted"] = Query(default="adapted")) -> dict[s
 @app.get("/api/evaluation")
 def evaluation() -> dict[str, object]:
     return service.evaluation()
+
+
+@app.get("/api/scenarios")
+def scenarios() -> dict[str, object]:
+    return {"scenarios": service.scenarios()}
+
+
+@app.post("/api/scenarios", status_code=201)
+def save_scenario(payload: ScenarioPayload) -> dict[str, object]:
+    try:
+        return service.save_scenario(payload.model_dump())
+    except ScenarioConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.post("/api/simulate")
@@ -78,4 +119,3 @@ def simulate(request: SimulateRequest) -> dict[str, object]:
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-

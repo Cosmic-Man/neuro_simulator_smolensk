@@ -22,6 +22,7 @@
       </a>
       <div class="nav-links">
         <a href="#history">Данные</a>
+        <a href="#indices">Индексы</a>
         <a href="#models">Модели</a>
         <a href="#map">FCM</a>
         <a href="#scenarios">Сценарии</a>
@@ -43,8 +44,8 @@
         <div class="method-badge">FCM × ANFIS</div>
         <p>Экспертные причинные связи уточняются закономерностями данных, но не теряют исходный смысл и знак.</p>
         <dl>
-          <div><dt id="nodeCount">17</dt><dd>узлов</dd></div>
-          <div><dt id="edgeCount">37</dt><dd>связей</dd></div>
+          <div><dt id="nodeCount">16</dt><dd>узлов</dd></div>
+          <div><dt id="edgeCount">34</dt><dd>связей</dd></div>
           <div><dt>7</dt><dd>сценариев</dd></div>
         </dl>
       </aside>
@@ -61,8 +62,8 @@
       <div class="source-grid">
         <article class="panel source-panel">
           <span class="panel-kicker">Источник</span>
-          <h3>Пять муниципальных программ</h3>
-          <p>Дорожный комплекс, наружное освещение, общественный транспорт, безопасность движения и вело-пешеходная инфраструктура.</p>
+          <h3>Новый сводный датасет</h3>
+          <p>80 кварталов, 31 показатель и шесть тематических блоков. Все параметры обработки обучаются только на train.</p>
           <div id="sheetTags" class="tag-row"></div>
         </article>
         <article class="panel proxy-panel">
@@ -94,9 +95,28 @@
       </div>
     </section>
 
+    <section id="indices" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">03</span><h2>Нечёткие и экспертные индексы</h2></div>
+        <p>Восемь свёрток Кирилла и линейный индекс Гульдар по 31 показателю</p>
+      </div>
+      <div id="fuzzyIndexCards" class="index-grid"></div>
+      <div class="source-grid index-analysis">
+        <article class="panel chart-panel">
+          <div class="panel-toolbar"><div><span class="panel-kicker">Динамика</span><h3>Частные индексы</h3></div><label>Индекс<select id="fuzzyIndexSelect"></select></label></div>
+          <div id="fuzzyIndexPlot" class="plot"></div>
+        </article>
+        <article class="panel contribution-panel">
+          <span class="panel-kicker">Линейная свёртка</span>
+          <h3>Главные вклады последнего квартала</h3>
+          <div id="linearContributions" class="contribution-list"></div>
+        </article>
+      </div>
+    </section>
+
     <section id="models" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">03</span><h2>Сравнение моделей</h2></div>
+        <div><span class="section-index">04</span><h2>Сравнение моделей</h2></div>
         <p>Тест 2023Q1–2025Q4 не участвует в обучении и настройке</p>
       </div>
       <div class="panel chart-panel">
@@ -120,7 +140,7 @@
 
     <section id="map" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">04</span><h2>Нечёткая когнитивная карта</h2></div>
+        <div><span class="section-index">05</span><h2>Нечёткая когнитивная карта</h2></div>
         <p>Зелёные связи усиливают, красные — ослабляют</p>
       </div>
       <div class="panel map-panel">
@@ -141,7 +161,7 @@
 
     <section id="scenarios" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">05</span><h2>Лаборатория сценариев</h2></div>
+        <div><span class="section-index">06</span><h2>Лаборатория сценариев</h2></div>
         <p>Импульсы действуют на каждом квартальном шаге FCM</p>
       </div>
       <div class="scenario-layout">
@@ -149,19 +169,24 @@
           <div><span class="panel-kicker">Настройки</span><h3>Управляющие воздействия</h3></div>
           <label>Готовый сценарий<select id="scenarioPreset"></select></label>
           <p id="scenarioDescription" class="control-description"></p>
+          <div class="scenario-upload">
+            <input id="scenarioFile" type="file" accept="application/json,.json">
+            <button id="uploadScenario" class="mini-button" type="button">Загрузить JSON</button>
+          </div>
           <div class="control-row">
             <label>Модель<select id="scenarioMode"><option value="adapted">FCM + ANFIS</option><option value="expert">Экспертная FCM</option></select></label>
             <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
           </div>
           <div class="slider-heading"><span>Дополнительные импульсы</span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
           <div id="scenarioSliders" class="slider-list"></div>
-          <button id="runScenario" class="primary-button full-button" type="button">Рассчитать сценарий</button>
+          <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
         <div class="scenario-results">
           <div class="scenario-chart-grid">
             <article class="panel mini-chart-panel"><span class="panel-kicker">Безопасность</span><div id="safetyPlot" class="plot"></div></article>
             <article class="panel mini-chart-panel"><span class="panel-kicker">Регулярность</span><div id="regularityPlot" class="plot"></div></article>
-            <article class="panel mini-chart-panel wide"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
+            <article class="panel mini-chart-panel"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
+            <article class="panel mini-chart-panel"><span class="panel-kicker">Итоговый индекс</span><div id="integratedPlot" class="plot"></div></article>
           </div>
           <article class="panel explanation-panel">
             <span class="panel-kicker">Объяснение результата</span>
@@ -175,7 +200,7 @@
 
     <section id="sensitivity" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">06</span><h2>Чувствительность</h2></div>
+        <div><span class="section-index">07</span><h2>Чувствительность</h2></div>
         <p>Эффект постоянного импульса +0,07 на горизонте восьми кварталов</p>
       </div>
       <div class="panel chart-panel">

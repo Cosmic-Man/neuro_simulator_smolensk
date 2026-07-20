@@ -12,6 +12,7 @@ DATA_PATH = Path(
     )
 )
 STATIC_DIR = PROJECT_ROOT / "app" / "static"
+SCENARIO_DIR = PROJECT_ROOT / "runtime" / "scenarios"
 
 TRAIN_START = "2006Q1"
 TRAIN_END = "2018Q4"
@@ -20,15 +21,7 @@ VALIDATION_END = "2022Q4"
 TEST_START = "2023Q1"
 TEST_END = "2025Q4"
 
-RETENTION = 0.65
-GAIN = 2.0
+FCM_ALPHA = 0.35
+FCM_LAMBDA = 1.3
 DEFAULT_HORIZON = 8
-
-SHEETS = {
-    "roads": "03_Дорожно-транспортный_комплек",
-    "lighting": "32_Наружное_освещение",
-    "transit": "34_Городской_общественный_транс",
-    "safety": "35_Парковки_и_безопасность_движ",
-    "active": "36_Вело-пешеходная_инфраструкту",
-}
 

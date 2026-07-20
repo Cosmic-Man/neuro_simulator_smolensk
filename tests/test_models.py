@@ -15,8 +15,8 @@ class ModelTests(unittest.TestCase):
         cls.service = ProblemBService()
 
     def test_fcm_shape_edge_count_and_weight_constraints(self) -> None:
-        self.assertEqual(self.service.weights.expert.shape, (17, 17))
-        self.assertGreaterEqual(len(EXPERT_EDGES), 25)
+        self.assertEqual(self.service.weights.expert.shape, (16, 16))
+        self.assertGreaterEqual(len(EXPERT_EDGES), 30)
         self.assertLessEqual(float(np.abs(self.service.weights.adapted.to_numpy()).max()), 1.0)
         for source, target, expert in EXPERT_EDGES:
             adapted = float(self.service.weights.adapted.loc[source, target])
@@ -50,6 +50,9 @@ class ModelTests(unittest.TestCase):
         transit = self.service.simulate("transit_priority")
         self.assertGreater(transit["scenario_result"][-1]["regularity"], transit["baseline"][-1]["regularity"])
         self.assertGreater(transit["scenario_result"][-1]["accessibility"], transit["baseline"][-1]["accessibility"])
+
+        limited = self.service.simulate("limited_resources")
+        self.assertLess(limited["scenario_result"][-1]["integrated_mobility"], limited["baseline"][-1]["integrated_mobility"])
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

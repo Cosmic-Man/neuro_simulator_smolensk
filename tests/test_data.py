@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from app.config import DATA_PATH, TRAIN_END
-from app.data import EXPECTED_PERIODS, NODE_IDS, load_problem_b_data
+from app.data import EXPECTED_PERIODS, FEATURE_NAMES, NODE_IDS, load_problem_b_data
 
 
 class DataPipelineTests(unittest.TestCase):
@@ -13,10 +13,12 @@ class DataPipelineTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.bundle = load_problem_b_data(DATA_PATH)
 
-    def test_all_quarters_and_selected_sheets_are_present(self) -> None:
+    def test_shared_excel_schema_and_periods(self) -> None:
         self.assertEqual(self.bundle.raw.index.to_list(), EXPECTED_PERIODS)
-        self.assertEqual(len(self.bundle.sheets), 5)
-        self.assertTrue(all(len(frame) == 80 for frame in self.bundle.sheets.values()))
+        self.assertEqual(self.bundle.features.shape, (80, 31))
+        self.assertEqual(self.bundle.features.columns.to_list(), FEATURE_NAMES)
+        self.assertEqual(len(set(self.bundle.features.columns)), 31)
+        self.assertEqual(len(self.bundle.feature_metadata), 31)
 
     def test_time_splits_have_expected_size(self) -> None:
         periods = self.bundle.raw.index
@@ -24,18 +26,26 @@ class DataPipelineTests(unittest.TestCase):
         self.assertEqual(int(((periods >= "2019Q1") & (periods <= "2022Q4")).sum()), 16)
         self.assertEqual(int((periods >= "2023Q1").sum()), 12)
 
-    def test_factors_are_finite_and_bounded(self) -> None:
+    def test_fuzzy_indices_and_factors_are_finite_and_bounded(self) -> None:
+        self.assertEqual(self.bundle.fuzzy_indices.shape, (80, 8))
+        self.assertTrue(np.isfinite(self.bundle.fuzzy_indices.to_numpy()).all())
+        self.assertGreaterEqual(float(self.bundle.fuzzy_indices.min().min()), 0.0)
+        self.assertLessEqual(float(self.bundle.fuzzy_indices.max().max()), 100.0)
         self.assertEqual(self.bundle.factors.columns.to_list(), NODE_IDS)
         self.assertTrue(np.isfinite(self.bundle.factors.to_numpy()).all())
         self.assertGreaterEqual(float(self.bundle.factors.min().min()), 0.0)
         self.assertLessEqual(float(self.bundle.factors.max().max()), 1.0)
 
     def test_scalers_are_fit_on_train_only(self) -> None:
-        for name, scaler in self.bundle.scalers.items():
+        for name, scaler in {**self.bundle.scalers, **self.bundle.feature_scalers}.items():
             self.assertEqual(scaler.fitted_until, TRAIN_END, name)
         train_accidents = self.bundle.raw.loc[:TRAIN_END, "accidents"]
         self.assertEqual(self.bundle.scalers["accidents"].minimum, float(train_accidents.min()))
         self.assertEqual(self.bundle.scalers["accidents"].maximum, float(train_accidents.max()))
+
+    def test_integrated_index_is_mean_of_three_targets(self) -> None:
+        expected = self.bundle.factors[["traffic_safety", "transport_regularity", "transport_accessibility"]].mean(axis=1) * 100.0
+        np.testing.assert_allclose(self.bundle.raw["integrated_mobility"], expected)
 
 
 if __name__ == "__main__":

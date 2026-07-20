@@ -2,30 +2,24 @@ const state = {
   metadata: null,
   history: null,
   evaluation: null,
+  indices: null,
+  scenarios: [],
+  baseImpulses: {},
   graph: null,
   cy: null,
 };
 
 const colors = {
-  ink: "#112a2b",
-  muted: "#647776",
-  teal: "#0b6f68",
-  bright: "#20a79b",
-  coral: "#e2694f",
-  gold: "#c9933b",
-  blue: "#3a75a7",
-  grid: "rgba(17,42,43,.10)",
+  ink: "#112a2b", muted: "#647776", teal: "#0b6f68", bright: "#20a79b",
+  coral: "#e2694f", gold: "#c9933b", blue: "#3a75a7", grid: "rgba(17,42,43,.10)",
 };
-
 const plotConfig = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d"] };
 const baseLayout = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
+  paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
   margin: { l: 56, r: 24, t: 24, b: 52 },
   font: { family: "Segoe UI, Arial, sans-serif", color: colors.muted, size: 11 },
   hoverlabel: { bgcolor: colors.ink, bordercolor: colors.ink, font: { color: "#fff" } },
-  xaxis: { gridcolor: colors.grid, zeroline: false },
-  yaxis: { gridcolor: colors.grid, zeroline: false },
+  xaxis: { gridcolor: colors.grid, zeroline: false }, yaxis: { gridcolor: colors.grid, zeroline: false },
   legend: { orientation: "h", y: 1.12, x: 0 },
 };
 
@@ -33,7 +27,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
-    try { message = (await response.json()).detail || message; } catch (_) { /* noop */ }
+    try { message = (await response.json()).detail || message; } catch (_) { /* empty */ }
     throw new Error(message);
   }
   return response.json();
@@ -43,7 +37,7 @@ function showToast(message, isError = false) {
   const toast = document.getElementById("toast");
   toast.textContent = message;
   toast.className = `toast visible${isError ? " error" : ""}`;
-  window.setTimeout(() => { toast.className = "toast"; }, 3200);
+  window.setTimeout(() => { toast.className = "toast"; }, 3500);
 }
 
 function formatNumber(value, digits = 1) {
@@ -55,7 +49,7 @@ function fillSelect(select, items, valueKey = "id", labelKey = "label") {
   items.forEach(item => {
     const option = document.createElement("option");
     option.value = item[valueKey];
-    option.textContent = item[labelKey];
+    option.textContent = `${item.builtin === false ? "★ " : ""}${item[labelKey]}`;
     select.appendChild(option);
   });
 }
@@ -65,188 +59,166 @@ function renderOverview() {
   document.getElementById("latestPeriod").textContent = `Данные за ${latest.period}`;
   document.getElementById("nodeCount").textContent = state.metadata.fcm.nodes;
   document.getElementById("edgeCount").textContent = state.metadata.fcm.edges;
-
   const cards = [
-    { label: "ДТП на 10 тыс.", value: latest.accidents, unit: "случая", color: colors.coral },
+    { label: "Безопасность", value: latest.traffic_safety, unit: "из 100", color: colors.coral },
     { label: "Рейсы по расписанию", value: latest.regularity, unit: "%", color: colors.teal },
     { label: "Доступность", value: latest.accessibility, unit: "из 100", color: colors.blue },
-    { label: "Средняя скорость", value: latest.avg_speed, unit: "км/ч", color: colors.gold },
+    { label: "Итоговая мобильность", value: latest.integrated_mobility, unit: "из 100", color: colors.gold },
   ];
   document.getElementById("kpiGrid").innerHTML = cards.map(card => `
     <article class="panel kpi-card" style="--accent:${card.color}">
-      <span class="kpi-label">${card.label}</span>
-      <strong>${formatNumber(card.value)}</strong>
-      <small>${card.unit}</small>
+      <span class="kpi-label">${card.label}</span><strong>${formatNumber(card.value)}</strong><small>${card.unit}</small>
     </article>`).join("");
-
-  document.getElementById("sheetTags").innerHTML = state.metadata.sheets
-    .map(sheet => `<span class="tag">${sheet.id.toUpperCase()}</span>`).join("");
-  document.getElementById("proxyList").innerHTML = state.metadata.proxies
-    .map(proxy => `<div class="proxy-item"><strong>${proxy.label}</strong><span>${proxy.formula}</span></div>`).join("");
+  const groups = [...new Set(state.metadata.features.map(feature => feature.group))];
+  document.getElementById("sheetTags").innerHTML = groups.map(group => `<span class="tag">${group}</span>`).join("");
+  document.getElementById("proxyList").innerHTML = state.metadata.proxies.map(proxy =>
+    `<div class="proxy-item"><strong>${proxy.id}</strong><span>${proxy.description}</span></div>`).join("");
 }
 
-function historySeries(id) {
-  return state.history.series.find(item => item.id === id);
-}
+function historySeries(id) { return state.history.series.find(item => item.id === id); }
 
 function renderHistory() {
   const selected = historySeries(document.getElementById("historyMetric").value);
   document.getElementById("historyTitle").textContent = selected.label;
-  const splitShapes = [
-    { type: "rect", xref: "x", yref: "paper", x0: "2019Q1", x1: "2022Q4", y0: 0, y1: 1, fillcolor: "rgba(201,147,59,.08)", line: { width: 0 }, layer: "below" },
-    { type: "rect", xref: "x", yref: "paper", x0: "2023Q1", x1: "2025Q4", y0: 0, y1: 1, fillcolor: "rgba(226,105,79,.07)", line: { width: 0 }, layer: "below" },
+  const shapes = [
+    { type: "rect", xref: "x", yref: "paper", x0: "2019Q1", x1: "2022Q4", y0: 0, y1: 1, fillcolor: "rgba(201,147,59,.09)", line: { width: 0 }, layer: "below" },
+    { type: "rect", xref: "x", yref: "paper", x0: "2023Q1", x1: "2025Q4", y0: 0, y1: 1, fillcolor: "rgba(226,105,79,.08)", line: { width: 0 }, layer: "below" },
   ];
   Plotly.react("historyPlot", [{
-    x: state.history.periods,
-    y: selected.values,
-    type: "scatter",
-    mode: "lines",
-    name: selected.label,
-    line: { color: colors.teal, width: 3 },
-    fill: "tozeroy",
-    fillcolor: "rgba(32,167,155,.08)",
-    hovertemplate: "%{x}<br>%{y:.2f} " + selected.unit + "<extra></extra>",
-  }], { ...baseLayout, shapes: splitShapes, yaxis: { ...baseLayout.yaxis, title: selected.unit } }, plotConfig);
-
+    x: state.history.periods, y: selected.values, type: "scatter", mode: "lines+markers",
+    line: { color: colors.teal, width: 2.5 }, marker: { size: 4 }, name: selected.label,
+    hovertemplate: `%{x}<br>%{y:.2f} ${selected.unit}<extra></extra>`,
+  }], { ...baseLayout, shapes, yaxis: { ...baseLayout.yaxis, title: selected.unit } }, plotConfig);
   const buckets = [[], [], [], []];
   selected.values.forEach((value, index) => buckets[Number(state.history.periods[index].slice(-1)) - 1].push(value));
-  const averages = buckets.map(bucket => bucket.reduce((sum, value) => sum + value, 0) / bucket.length);
   Plotly.react("seasonPlot", [{
-    x: ["I квартал", "II квартал", "III квартал", "IV квартал"],
-    y: averages,
-    type: "bar",
-    marker: { color: [colors.teal, colors.bright, colors.gold, colors.coral], line: { width: 0 } },
-    hovertemplate: "%{x}<br>%{y:.2f} " + selected.unit + "<extra></extra>",
-  }], { ...baseLayout, showlegend: false, margin: { ...baseLayout.margin, t: 8 } }, plotConfig);
+    x: ["I", "II", "III", "IV"], y: buckets.map(values => values.reduce((a, b) => a + b, 0) / values.length),
+    type: "bar", marker: { color: [colors.teal, colors.bright, colors.gold, colors.coral] }, hovertemplate: "%{x} квартал<br>%{y:.2f}<extra></extra>",
+  }], { ...baseLayout, showlegend: false, margin: { l: 52, r: 18, t: 12, b: 42 } }, plotConfig);
 }
 
-function selectedEvaluationTarget() {
+function renderIndices() {
+  const latestIndex = state.indices.fuzzy.map(item => ({ ...item, value: item.values[item.values.length - 1] }));
+  document.getElementById("fuzzyIndexCards").innerHTML = latestIndex.map(item => `
+    <article class="panel index-card"><span class="panel-kicker">Fuzzy</span><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
+  fillSelect(document.getElementById("fuzzyIndexSelect"), state.indices.fuzzy);
+  renderFuzzyIndexPlot();
+  const max = Math.max(...state.indices.top_contributions.map(item => item.value), 0.001);
+  document.getElementById("linearContributions").innerHTML = state.indices.top_contributions.map(item => `
+    <div class="contribution-row" title="${item.label}"><span>${item.label}</span><div class="contribution-track"><div class="contribution-fill" style="width:${item.value / max * 100}%"></div></div><strong>${formatNumber(item.value, 3)}</strong></div>`).join("");
+}
+
+function renderFuzzyIndexPlot() {
+  const id = document.getElementById("fuzzyIndexSelect").value;
+  const item = state.indices.fuzzy.find(index => index.id === id);
+  Plotly.react("fuzzyIndexPlot", [
+    { x: state.indices.periods, y: item.values, name: item.label, type: "scatter", mode: "lines", line: { color: colors.teal, width: 2.5 } },
+    { x: state.indices.periods, y: state.indices.linear, name: "Линейный индекс Гульдар", type: "scatter", mode: "lines", line: { color: colors.gold, width: 2, dash: "dot" } },
+  ], { ...baseLayout, margin: { l: 50, r: 16, t: 24, b: 46 }, yaxis: { ...baseLayout.yaxis, range: [0, 100], title: "баллы" } }, plotConfig);
+}
+
+function selectedEvaluation() {
   return state.evaluation.targets.find(target => target.id === document.getElementById("evaluationTarget").value);
 }
 
 function renderEvaluation() {
-  const target = selectedEvaluationTarget();
+  const target = selectedEvaluation();
   const split = document.getElementById("evaluationSplit").value;
   const rows = target.predictions[split];
-  const modelColors = {
-    seasonal_naive: "#9aa6a5",
-    ridge: colors.blue,
-    fcm_expert: colors.gold,
-    fcm_adapted: colors.coral,
-    anfis: colors.teal,
-  };
-  const traces = [{
-    x: rows.map(row => row.period), y: rows.map(row => row.actual), name: "Факт",
-    type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 4 }, marker: { size: 7 },
-  }];
-  Object.entries(state.evaluation.model_labels).forEach(([model, label]) => {
-    traces.push({
-      x: rows.map(row => row.period), y: rows.map(row => row[model]), name: label,
-      type: "scatter", mode: "lines", line: { color: modelColors[model], width: 2, dash: model === "seasonal_naive" ? "dot" : "solid" },
-    });
-  });
+  const palette = { seasonal_naive: colors.muted, ridge: colors.blue, fcm_expert: colors.gold, fcm_adapted: colors.coral, anfis: colors.teal };
+  const traces = [{ x: rows.map(row => row.period), y: rows.map(row => row.actual), name: "Факт", type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 4 } }];
+  Object.entries(state.evaluation.model_labels).forEach(([model, label]) => traces.push({
+    x: rows.map(row => row.period), y: rows.map(row => row[model]), name: label, type: "scatter", mode: "lines", line: { color: palette[model], width: 2 },
+  }));
   Plotly.react("evaluationPlot", traces, { ...baseLayout, yaxis: { ...baseLayout.yaxis, title: target.unit } }, plotConfig);
-
   const metrics = target.metrics.filter(row => row.split === split);
-  const lowerKeys = ["mae", "rmse", "smape", "mase"];
-  const best = Object.fromEntries(lowerKeys.map(key => [key, Math.min(...metrics.map(row => row[key]))]));
-  best.directional_accuracy = Math.max(...metrics.map(row => row.directional_accuracy));
-  document.getElementById("metricsBody").innerHTML = metrics.map(row => {
-    const cell = (key, value, suffix = "", displayValue = value) => `<td class="${Math.abs(value - best[key]) < 1e-9 ? "best-metric" : ""}">${formatNumber(displayValue, key === "directional_accuracy" ? 2 : 3)}${suffix}</td>`;
-    return `<tr><td>${row.model_label}</td>${cell("mae", row.mae)}${cell("rmse", row.rmse)}${cell("smape", row.smape, "%")}${cell("mase", row.mase)}${cell("directional_accuracy", row.directional_accuracy, "%", row.directional_accuracy * 100)}</tr>`;
-  }).join("");
+  const bestRmse = Math.min(...metrics.map(row => row.rmse));
+  document.getElementById("metricsBody").innerHTML = metrics.map(row => `
+    <tr><td>${row.model_label}</td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`).join("");
 }
 
 function renderAnfisCards() {
-  const labels = Object.fromEntries(state.history.series.map(item => [item.id, item.label]));
-  Object.assign(labels, {
-    transit_budget: "Финансирование транспорта",
-    road_condition: "Состояние дорог",
-    crossings: "Регулируемые переходы",
-    accidents: "Лаг ДТП",
-    regularity: "Лаг регулярности",
-    avg_speed: "Средняя скорость",
-    accessibility: "Лаг доступности",
-  });
+  const labels = Object.fromEntries(state.metadata.targets.map(target => [target.id, target.label]));
   document.getElementById("anfisCards").innerHTML = state.metadata.anfis.map(model => `
-    <article class="panel model-card">
-      <span class="panel-kicker">ANFIS · ${model.rule_count} правил</span>
-      <h3>${model.target_label}</h3>
-      <ul>
-        ${model.inputs.map(input => `<li><span>Вход</span><strong>${labels[input] || input}</strong></li>`).join("")}
-        <li><span>σ</span><strong>${formatNumber(model.sigma, 2)}</strong></li>
-        <li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 3)}</strong></li>
-      </ul>
-    </article>`).join("");
+    <article class="panel model-card"><span class="panel-kicker">ANFIS · ${model.rule_count} правил</span><h3>${labels[model.target]}</h3><ul>
+      <li><span>Входы</span><strong>${model.inputs.length}</strong></li><li><span>σ</span><strong>${formatNumber(model.sigma, 2)}</strong></li>
+      <li><span>Ridge</span><strong>${formatNumber(model.ridge, 3)}</strong></li><li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 3)}</strong></li>
+    </ul></article>`).join("");
 }
 
 async function renderFcm() {
   const mode = document.getElementById("fcmMode").value;
   state.graph = await api(`/api/fcm?mode=${mode}`);
-  const elements = [
-    ...state.graph.nodes.map(node => ({ data: node })),
-    ...state.graph.edges.map(edge => ({ data: edge })),
-  ];
   if (state.cy) state.cy.destroy();
   state.cy = cytoscape({
-    container: document.getElementById("fcmGraph"),
-    elements,
+    container: document.getElementById("fcmGraph"), elements: [...state.graph.nodes, ...state.graph.edges],
     style: [
-      { selector: "node", style: { "label": "data(label)", "text-wrap": "wrap", "text-max-width": 120, "font-size": 10, "font-weight": 700, "color": colors.ink, "background-color": "#d8e8e4", "border-color": "#fff", "border-width": 3, "width": 66, "height": 66, "text-valign": "center", "text-halign": "center" } },
-      { selector: 'node[kind = "controllable"]', style: { "background-color": "#b9dfd8" } },
-      { selector: 'node[kind = "external"]', style: { "background-color": "#f1d9a8" } },
-      { selector: 'node[kind = "target"]', style: { "background-color": "#f0aa98", "width": 82, "height": 82 } },
-      { selector: "edge", style: { "curve-style": "bezier", "target-arrow-shape": "triangle", "width": "mapData(weight, -1, 1, 1, 5)", "line-color": colors.teal, "target-arrow-color": colors.teal, "opacity": .72 } },
-      { selector: 'edge[sign = "negative"]', style: { "line-color": colors.coral, "target-arrow-color": colors.coral, "line-style": "dashed" } },
-      { selector: ":selected", style: { "border-color": colors.ink, "border-width": 5, "opacity": 1 } },
+      { selector: "node", style: { "background-color": colors.blue, label: "data(label)", color: colors.ink, "font-size": 10, "text-wrap": "wrap", "text-max-width": 95, "text-valign": "bottom", "text-margin-y": 8, width: 32, height: 32 } },
+      { selector: 'node[kind = "control"]', style: { "background-color": colors.gold, shape: "round-rectangle" } },
+      { selector: 'node[kind = "target"]', style: { "background-color": colors.coral, width: 42, height: 42 } },
+      { selector: "edge", style: { width: "mapData(weight, -1, 1, 1, 5)", "curve-style": "bezier", "target-arrow-shape": "triangle", "line-color": colors.teal, "target-arrow-color": colors.teal, opacity: .72, label: "data(label)", "font-size": 8, "text-background-opacity": .8, "text-background-color": "#f4f1e8" } },
+      { selector: 'edge[sign = "negative"]', style: { "line-color": colors.coral, "target-arrow-color": colors.coral } },
     ],
-    layout: { name: "cose", animate: false, randomize: true, nodeRepulsion: 7600, idealEdgeLength: 115, edgeElasticity: 80, gravity: .6, numIter: 1000 },
-    minZoom: .45,
-    maxZoom: 2.2,
+    layout: { name: "cose", animate: false, padding: 38, nodeRepulsion: 520000, idealEdgeLength: 110 },
   });
-  state.cy.on("tap", "edge", event => renderEdgeInspector(event.target.data()));
-}
-
-function renderEdgeInspector(edge) {
-  const nodeLabels = Object.fromEntries(state.graph.nodes.map(node => [node.id, node.label]));
-  const weights = [
-    ["Эксперт", edge.expert_weight],
-    ["Из данных", edge.data_weight],
-    ["Адаптированный", edge.adapted_weight],
-  ];
-  document.getElementById("edgeInspector").innerHTML = `
-    <span class="panel-kicker">Инспектор связи</span>
-    <h3>${nodeLabels[edge.source]} → ${nodeLabels[edge.target]}</h3>
-    <p>${edge.sign === "positive" ? "Положительное влияние: рост источника усиливает целевой фактор." : "Отрицательное влияние: рост источника ослабляет целевой фактор."}</p>
-    <div class="weight-stack">${weights.map(([label, value]) => `
-      <div class="weight-line"><div><span>${label}</span><strong>${value > 0 ? "+" : ""}${formatNumber(value, 3)}</strong></div>
-      <div class="weight-track"><div class="weight-fill" style="width:${Math.max(5, Math.abs(value) * 100)}%;background:${value >= 0 ? "#72d4ca" : "#f08f79"}"></div></div></div>`).join("")}</div>`;
-}
-
-function renderScenarioControls() {
-  fillSelect(document.getElementById("scenarioPreset"), state.metadata.scenarios);
-  const adjustable = state.metadata.nodes.filter(node => node.kind !== "target");
-  document.getElementById("scenarioSliders").innerHTML = adjustable.map(node => `
-    <div class="slider-item">
-      <div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div>
-      <input type="range" min="-0.20" max="0.20" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}">
-    </div>`).join("");
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
-    input.addEventListener("input", () => { document.getElementById(`value-${input.dataset.node}`).textContent = Number(input.value).toFixed(2); });
+  state.cy.on("tap", "edge", event => {
+    const edge = event.target.data();
+    const source = state.metadata.nodes.find(node => node.id === edge.source);
+    const target = state.metadata.nodes.find(node => node.id === edge.target);
+    document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${source.label} → ${target.label}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${mode}»: ${edge.weight > 0 ? "+" : ""}${edge.weight.toFixed(3)}.</p>`;
   });
-  updateScenarioDescription();
 }
 
-function updateScenarioDescription() {
-  const scenario = state.metadata.scenarios.find(item => item.id === document.getElementById("scenarioPreset").value);
+function scenarioById(id) { return state.scenarios.find(item => item.id === id); }
+
+function renderScenarioControls(selectedId = null) {
+  const select = document.getElementById("scenarioPreset");
+  fillSelect(select, state.scenarios);
+  if (selectedId && state.scenarios.some(item => item.id === selectedId)) select.value = selectedId;
+  const adjustable = state.metadata.nodes.filter(node => node.adjustable);
+  const primaryIds = new Set(["road_budget_execution", "transit_budget_execution", "safety_budget_execution", "road_repair", "crossings"]);
+  const renderSlider = node => `<div class="slider-item"><div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div><input type="range" min="-0.30" max="0.30" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}"></div>`;
+  const primary = adjustable.filter(node => primaryIds.has(node.id));
+  const advanced = adjustable.filter(node => !primaryIds.has(node.id));
+  document.getElementById("scenarioSliders").innerHTML = `${primary.map(renderSlider).join("")}<details><summary>Дополнительные узлы</summary>${advanced.map(renderSlider).join("")}</details>`;
+  document.querySelectorAll("#scenarioSliders input").forEach(input => input.addEventListener("input", () => {
+    document.getElementById(`value-${input.dataset.node}`).textContent = Number(input.value).toFixed(2);
+  }));
+  applySelectedScenario();
+}
+
+function applySelectedScenario() {
+  const scenario = scenarioById(document.getElementById("scenarioPreset").value);
+  if (!scenario) return;
   document.getElementById("scenarioDescription").textContent = scenario.description;
-}
-
-function resetSliders() {
+  document.getElementById("scenarioMode").value = scenario.mode;
+  const horizon = document.getElementById("scenarioHorizon");
+  if (![...horizon.options].some(option => Number(option.value) === Number(scenario.horizon))) {
+    const option = document.createElement("option"); option.value = scenario.horizon; option.textContent = `${scenario.horizon} кварталов`; horizon.appendChild(option);
+  }
+  horizon.value = scenario.horizon;
+  state.baseImpulses = { ...scenario.impulses };
   document.querySelectorAll("#scenarioSliders input").forEach(input => {
-    input.value = 0;
+    input.value = state.baseImpulses[input.dataset.node] || 0;
     input.dispatchEvent(new Event("input"));
   });
+}
+
+function resetSliders() { applySelectedScenario(); }
+
+async function uploadScenario() {
+  const input = document.getElementById("scenarioFile");
+  const file = input.files[0];
+  if (!file) { showToast("Выберите JSON-файл", true); return; }
+  if (file.size > 65536) { showToast("JSON-файл превышает 64 КБ", true); return; }
+  try {
+    const payload = JSON.parse(await file.text());
+    const saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
+    const response = await api("/api/scenarios");
+    state.scenarios = response.scenarios;
+    renderScenarioControls(saved.id);
+    showToast(`Сценарий «${saved.label}» сохранён`);
+  } catch (error) { showToast(error.message, true); }
 }
 
 function plotScenario(div, baseline, scenario, key, unit, customDataKey = null) {
@@ -261,60 +233,50 @@ function plotScenario(div, baseline, scenario, key, unit, customDataKey = null) 
 
 async function runScenario() {
   const button = document.getElementById("runScenario");
-  button.disabled = true;
-  button.textContent = "Расчёт…";
+  button.disabled = true; button.textContent = "Расчёт…";
   const impulses = {};
   document.querySelectorAll("#scenarioSliders input").forEach(input => {
-    const value = Number(input.value);
-    if (Math.abs(value) > .0001) impulses[input.dataset.node] = value;
+    const delta = Number(input.value) - Number(state.baseImpulses[input.dataset.node] || 0);
+    if (Math.abs(delta) > .0001) impulses[input.dataset.node] = delta;
   });
   try {
-    const result = await api("/api/simulate", {
-      method: "POST",
-      body: JSON.stringify({
-        scenario: document.getElementById("scenarioPreset").value,
-        mode: document.getElementById("scenarioMode").value,
-        horizon: Number(document.getElementById("scenarioHorizon").value),
-        impulses,
-      }),
-    });
-    plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "индекс", "accidents");
+    const result = await api("/api/simulate", { method: "POST", body: JSON.stringify({
+      scenario: document.getElementById("scenarioPreset").value,
+      mode: document.getElementById("scenarioMode").value,
+      horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
+    }) });
+    plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents");
     plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%");
     plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы");
+    plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы");
     document.getElementById("scenarioResultTitle").textContent = result.scenario.label;
     document.getElementById("scenarioExplanation").innerHTML = result.explanation.map(item => `<li>${item}</li>`).join("");
     document.getElementById("appliedImpulses").innerHTML = result.applied_impulses.length
       ? result.applied_impulses.map(item => `<span class="tag">${item.label}: ${item.value > 0 ? "+" : ""}${item.value.toFixed(2)}</span>`).join("")
       : '<span class="tag">Без внешних импульсов</span>';
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Рассчитать сценарий";
-  }
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Запустить прогноз"; }
 }
 
 function renderSensitivity() {
   const targetId = document.getElementById("sensitivityTarget").value;
   const items = state.evaluation.sensitivity[targetId].slice(0, 10).reverse();
   Plotly.react("sensitivityPlot", [{
-    x: items.map(item => item.delta_index_points),
-    y: items.map(item => item.label),
-    type: "bar",
-    orientation: "h",
+    x: items.map(item => item.delta_index_points), y: items.map(item => item.label), type: "bar", orientation: "h",
     marker: { color: items.map(item => item.delta_index_points >= 0 ? colors.teal : colors.coral) },
-    customdata: items.map(item => item.delta_raw),
-    hovertemplate: "%{y}<br>Индекс: %{x:+.3f} п.п.<br>Сырая шкала: %{customdata:+.3f}<extra></extra>",
+    hovertemplate: "%{y}<br>%{x:+.3f} п.п.<extra></extra>",
   }], { ...baseLayout, showlegend: false, margin: { l: 220, r: 28, t: 12, b: 48 }, xaxis: { ...baseLayout.xaxis, title: "Изменение целевого индекса, п.п." } }, plotConfig);
 }
 
 function bindEvents() {
   document.getElementById("historyMetric").addEventListener("change", renderHistory);
+  document.getElementById("fuzzyIndexSelect").addEventListener("change", renderFuzzyIndexPlot);
   document.getElementById("evaluationTarget").addEventListener("change", renderEvaluation);
   document.getElementById("evaluationSplit").addEventListener("change", renderEvaluation);
   document.getElementById("fcmMode").addEventListener("change", () => renderFcm().catch(error => showToast(error.message, true)));
-  document.getElementById("scenarioPreset").addEventListener("change", updateScenarioDescription);
+  document.getElementById("scenarioPreset").addEventListener("change", applySelectedScenario);
   document.getElementById("resetSliders").addEventListener("click", resetSliders);
+  document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
   document.getElementById("runScenario").addEventListener("click", runScenario);
   document.getElementById("sensitivityTarget").addEventListener("change", renderSensitivity);
 }
@@ -322,33 +284,20 @@ function bindEvents() {
 async function initialize() {
   const status = document.getElementById("apiStatus");
   try {
-    const [health, metadata, history, evaluation] = await Promise.all([
-      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/evaluation"),
+    const [health, metadata, history, indices, evaluation, scenarios] = await Promise.all([
+      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/scenarios"),
     ]);
-    state.metadata = metadata;
-    state.history = history;
-    state.evaluation = evaluation;
-    status.className = "status-pill ready";
-    status.innerHTML = `<span></span>Готово · ${health.periods} кварталов`;
-
+    Object.assign(state, { metadata, history, indices, evaluation, scenarios: scenarios.scenarios });
+    status.className = "status-pill ready"; status.innerHTML = `<span></span>Готово · ${health.periods} кварталов`;
     renderOverview();
-    fillSelect(document.getElementById("historyMetric"), state.history.series);
-    document.getElementById("historyMetric").value = "accidents";
+    fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "integrated_mobility";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.targets);
-    renderHistory();
-    renderEvaluation();
-    renderAnfisCards();
-    renderScenarioControls();
-    renderSensitivity();
-    bindEvents();
-    await renderFcm();
-    await runScenario();
+    renderHistory(); renderIndices(); renderEvaluation(); renderAnfisCards(); renderScenarioControls(); renderSensitivity(); bindEvents();
+    await renderFcm(); await runScenario();
   } catch (error) {
-    status.className = "status-pill error";
-    status.innerHTML = "<span></span>Ошибка запуска";
-    showToast(`Не удалось запустить интерфейс: ${error.message}`, true);
-    console.error(error);
+    status.className = "status-pill error"; status.innerHTML = "<span></span>Ошибка запуска";
+    showToast(`Не удалось запустить интерфейс: ${error.message}`, true); console.error(error);
   }
 }
 
