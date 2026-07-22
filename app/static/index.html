@@ -17,10 +17,6 @@
 
   <header class="hero shell">
     <nav class="topbar">
-      <a class="brand" href="#scenarios" aria-label="К лаборатории FCM-сценариев">
-        <span class="brand-mark">СМ</span>
-        <span><strong>Нейросимулятор</strong><small>Смоленск · проблема Б</small></span>
-      </a>
       <div class="nav-links">
         <a href="#scenarios">Решения</a>
         <a href="#overview">Состояние</a>
@@ -29,7 +25,7 @@
         <a href="#technicalAppendix">Графики</a>
       </div>
       <div class="topbar-actions">
-        <div id="apiStatus" class="status-pill"><span></span>Подключение…</div>
+        <div id="apiStatus" class="status-pill" role="status" aria-label="Подключение"><span></span></div>
       </div>
     </nav>
 
@@ -239,7 +235,7 @@
           </section>
           <article class="panel recommendations-panel">
             <div class="panel-toolbar toolbar-wrap">
-              <div><span class="panel-kicker">Что улучшать в первую очередь</span><h3>Пять предложений для выбранной проблемы <span class="info-tip" tabindex="0" data-tooltip="Рейтинг учитывает текущее состояние последнего квартала, связи FCM и закономерности ANFIS. Нажмите «Проверить меру», чтобы сразу добавить её в сценарий.">?</span></h3></div>
+              <div><h3>Шесть индексов для модели доступности</h3></div>
             </div>
             <div id="recommendationStatus" class="recommendation-status">Запустите расчёт — система оценит текущее положение и предложит пять мер.</div>
             <ol id="recommendationList" class="recommendation-list"></ol>

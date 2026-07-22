@@ -137,6 +137,17 @@ class ModelTests(unittest.TestCase):
             result["baseline"][-1]["accessibility"],
         )
 
+    def test_all_customer_index_controls_are_mapped_to_fcm_nodes(self) -> None:
+        values = {
+            index_id: float(self.service.bundle.fuzzy_indices.iloc[-1][index_id])
+            for index_id in (
+                "urban_environment", "road_quality_dtc", "accessible_environment",
+                "public_spaces", "road_quality_transit", "parking_safety",
+            )
+        }
+        result = self.service.simulate("inertial", index_values=values)
+        self.assertEqual(len(result["scenario_result"]), result["horizon"] + 1)
+
         roads = self.service.simulate("inertial", custom_impulses={"road_budget_execution": 1.0})
         self.assertGreater(roads["scenario_result"][-1]["accessibility"], roads["baseline"][-1]["accessibility"])
 

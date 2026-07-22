@@ -1058,7 +1058,7 @@ async function initializeApplication() {
       api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"), api("/api/models/status"),
     ]);
     Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, modelStatus, scenarios: scenarios.scenarios });
-    status.className = "status-pill ready"; status.innerHTML = `<span></span>Готово · ${health.periods} кварталов`;
+    status.className = "status-pill ready"; status.setAttribute("aria-label", `Готово · ${health.periods} кварталов`); status.innerHTML = "<span></span>";
     renderOverview();
     renderScenarioControls(); bindEvents();
     fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "pipeline_target";
@@ -1069,7 +1069,7 @@ async function initializeApplication() {
     await renderFcm();
     await runScenario();
   } catch (error) {
-    status.className = "status-pill error"; status.innerHTML = "<span></span>Ошибка запуска";
+    status.className = "status-pill error"; status.setAttribute("aria-label", "Ошибка запуска"); status.innerHTML = "<span></span>";
     showToast(`Не удалось запустить интерфейс: ${error.message}`, true); console.error(error);
   }
 }

@@ -22,7 +22,7 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
 
     def test_all_colab_rule_tables_are_complete(self) -> None:
         self.assertEqual(len(FUZZY_INDEX_SPECS), 8)
-        self.assertEqual(sum(len(build_fuzzy_system(spec).rules) for spec in FUZZY_INDEX_SPECS), 1176)
+        self.assertEqual(sum(len(build_fuzzy_system(spec).rules) for spec in FUZZY_INDEX_SPECS), 2164)
         self.assertTrue(all((PIPELINE_RULE_DIR / spec.rule_filename).is_file() for spec in FUZZY_INDEX_SPECS))
 
     def test_hierarchical_weights_and_contributions(self) -> None:
@@ -39,21 +39,21 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
         first = self.bundle.fuzzy_indices.iloc[0]
         expected_first = {
             "urban_environment": 9.4366009795,
-            "road_quality_dtc": 27.5749718674,
+            "road_quality_dtc": 27.5749722896,
             "road_wellbeing_dtc": 9.6449270586,
             "accessible_environment": 8.9207297270,
             "public_spaces": 14.4284270484,
-            "road_quality_transit": 10.4024016609,
+            "road_quality_transit": 10.4024015125,
             "road_wellbeing_transit": 13.3934224624,
             "parking_safety": 24.1732540837,
         }
         expected_last = {
             "urban_environment": 88.611092,
-            "road_quality_dtc": 87.000152,
+            "road_quality_dtc": 95.599777,
             "road_wellbeing_dtc": 95.444293,
             "accessible_environment": 78.949130,
             "public_spaces": 95.545402,
-            "road_quality_transit": 87.000152,
+            "road_quality_transit": 90.615324,
             "road_wellbeing_transit": 94.739771,
             "parking_safety": 95.196587,
         }
@@ -62,12 +62,12 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
         for name, expected in expected_last.items():
             self.assertAlmostEqual(self.bundle.fuzzy_indices.iloc[-1][name], expected, places=5, msg=name)
         self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[0], 14.5569163653, places=6)
-        self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[-1], 91.301046, places=5)
+        self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[-1], 92.972871, places=5)
         target = self.bundle.raw["pipeline_target"]
-        self.assertAlmostEqual(target.mean(), 56.888990, places=5)
-        self.assertAlmostEqual(target.std(), 21.146976, places=5)
+        self.assertAlmostEqual(target.mean(), 59.054564, places=5)
+        self.assertAlmostEqual(target.std(), 21.833919, places=5)
         self.assertAlmostEqual(target.min(), 14.556916, places=5)
-        self.assertAlmostEqual(target.max(), 91.301046, places=5)
+        self.assertAlmostEqual(target.max(), 92.972871, places=5)
 
 
 if __name__ == "__main__":

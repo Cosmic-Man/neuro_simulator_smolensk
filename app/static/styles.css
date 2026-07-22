@@ -53,7 +53,7 @@ input:not([type="range"]):not([type="file"]):not([type="checkbox"]):focus { bord
 .nav-links { display: flex; gap: 28px; font-size: 14px; }
 .nav-links a { text-decoration: none; color: var(--muted); transition: color .2s; }
 .nav-links a:hover { color: var(--ink); }
-.status-pill { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.5); color: var(--muted); font-size: 13px; }
+.status-pill { display: grid; width: 12px; height: 12px; place-items: center; }
 .status-pill span { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(201,147,59,.12); }
 .status-pill.ready span { background: var(--teal-bright); box-shadow: 0 0 0 4px rgba(32,167,155,.13); }
 .status-pill.error span { background: var(--coral); }
@@ -212,6 +212,7 @@ th { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform
 .weight-fill { height: 100%; border-radius: inherit; background: #72d4ca; }
 
 .scenario-layout { display: grid; grid-template-columns: 350px minmax(0, 1fr); gap: 16px; align-items: start; }
+.scenario-results { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; scrollbar-gutter: stable; }
 .problem-focus { display: grid; grid-template-columns: minmax(0,1fr) minmax(280px,420px); align-items: center; gap: 24px; margin-bottom: 16px; padding: 22px 26px; border-left: 4px solid var(--coral); }
 .problem-focus h3 { margin: 5px 0 7px; }
 .problem-focus p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
@@ -351,7 +352,7 @@ input[type="range"] { width: 100%; accent-color: var(--teal); }
   .method-card { max-width: 440px; transform: none; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .source-grid, .map-layout, .scenario-layout, .problem-focus { grid-template-columns: 1fr; }
-  .scenario-controls { position: static; }
+  .scenario-controls, .scenario-results { position: static; max-height: none; overflow: visible; padding-right: 0; }
   .model-grid { grid-template-columns: 1fr; }
   .index-grid { grid-template-columns: repeat(2, 1fr); }
   .business-kpi-grid { grid-template-columns: repeat(2, 1fr); }

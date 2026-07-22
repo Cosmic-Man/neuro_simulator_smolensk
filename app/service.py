@@ -111,7 +111,7 @@ INDEX_CONTROL_NODES = {
     "urban_environment": "transport_environment",
     "road_quality_dtc": "road_condition",
     "accessible_environment": "transport_accessibility",
-    "public_spaces": "pedestrian_infrastructure",
+    "public_spaces": "crossings",
     "road_quality_transit": "transport_regularity",
     "parking_safety": "traffic_safety",
 }
@@ -1044,6 +1044,8 @@ class ProblemBService:
             if not np.isfinite(numeric) or not 0.0 <= numeric <= 100.0:
                 raise ValueError(f"Значение индекса {index_id} должно быть в диапазоне [0, 100]")
             node_id = INDEX_CONTROL_NODES[index_id]
+            if node_id not in node_positions:
+                raise RuntimeError(f"Для индекса {index_id} не настроен узел FCM: {node_id}")
             delta = (numeric - float(fuzzy_latest[index_id])) / 100.0
             position = node_positions[node_id]
             scenario_initial[position] = float(np.clip(scenario_initial[position] + delta, 0.0, 1.0))
