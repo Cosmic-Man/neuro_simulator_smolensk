@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from itertools import product
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -73,7 +78,14 @@ class RidgeRegressor:
         return design @ self.coef_
 
 
-class ANFISRegressor:
+ANFIS_ARTIFACT_VERSION = 1
+
+
+class ModelArtifactError(ValueError):
+    """Артефакт модели отсутствует, повреждён или не соответствует данным."""
+
+
+class ANFIS:
     """
     Компактная модель Сугено: две гауссовы функции принадлежности на вход,
     до 16 правил и линейные консеквенты, обучаемые Ridge-методом.
@@ -99,6 +111,28 @@ class ANFISRegressor:
         self.ridge_: float | None = None
         self.theta_: np.ndarray | None = None
         self.validation_rmse_: float | None = None
+
+    def training_signature(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_validation: np.ndarray,
+        y_validation: np.ndarray,
+        *,
+        context: str = "",
+    ) -> str:
+        """Строит воспроизводимый отпечаток входов и настроек модели."""
+        digest = hashlib.sha256()
+        digest.update(f"anfis-artifact:{ANFIS_ARTIFACT_VERSION}\n".encode())
+        digest.update(context.encode("utf-8"))
+        digest.update("\0".join(self.feature_names).encode("utf-8"))
+        digest.update(repr(self.sigma_candidates).encode())
+        digest.update(repr(self.ridge_candidates).encode())
+        for values in (x_train, y_train, x_validation, y_validation):
+            array = np.ascontiguousarray(values, dtype=np.float64)
+            digest.update(str(array.shape).encode())
+            digest.update(array.tobytes())
+        return digest.hexdigest()
 
     @property
     def rule_count(self) -> int:
@@ -138,7 +172,7 @@ class ANFISRegressor:
         y_train: np.ndarray,
         x_validation: np.ndarray,
         y_validation: np.ndarray,
-    ) -> "ANFISRegressor":
+    ) -> "ANFIS":
         x_train = np.asarray(x_train, dtype=float)
         y_train = np.asarray(y_train, dtype=float)
         x_validation = np.asarray(x_validation, dtype=float)
@@ -170,6 +204,137 @@ class ANFISRegressor:
         self.validation_rmse_, self.sigma_, self.ridge_, self.theta_ = best
         return self
 
+    def _validate_fitted_state(self) -> None:
+        arrays = {
+            "x_min": self.x_min_,
+            "x_max": self.x_max_,
+            "centers": self.centers_,
+            "rules": self.rules_,
+            "theta": self.theta_,
+        }
+        missing = [name for name, value in arrays.items() if value is None]
+        if missing or self.sigma_ is None or self.ridge_ is None or self.validation_rmse_ is None:
+            raise ModelArtifactError("ANFIS ещё не обучен: артефакт сохранить нельзя.")
+
+        feature_count = len(self.feature_names)
+        rule_count = len(self.rules_)
+        expected_shapes = {
+            "x_min": (feature_count,),
+            "x_max": (feature_count,),
+            "centers": (feature_count, 2),
+            "rules": (rule_count, feature_count),
+            "theta": (rule_count * (feature_count + 1),),
+        }
+        for name, expected in expected_shapes.items():
+            value = np.asarray(arrays[name])
+            if value.shape != expected or not np.isfinite(value).all():
+                raise ModelArtifactError(f"Некорректный параметр ANFIS {name}: ожидалась форма {expected}.")
+        if rule_count < 1 or rule_count > 16:
+            raise ModelArtifactError("Число правил ANFIS должно быть от 1 до 16.")
+        if not np.isin(self.rules_, (0, 1)).all():
+            raise ModelArtifactError("Индексы функций принадлежности ANFIS должны быть 0 или 1.")
+        if not np.isfinite((self.sigma_, self.ridge_, self.validation_rmse_)).all():
+            raise ModelArtifactError("Скалярные параметры ANFIS должны быть конечными.")
+        if self.sigma_ <= 0 or self.ridge_ < 0 or self.validation_rmse_ < 0:
+            raise ModelArtifactError("Ширина, регуляризация и RMSE ANFIS имеют недопустимое значение.")
+
+    def save(self, path: Path | str, *, training_signature: str) -> Path:
+        """Атомарно сохраняет модель без pickle-кода и сторонних зависимостей."""
+        self._validate_fitted_state()
+        if len(training_signature) != 64:
+            raise ValueError("training_signature должен быть SHA-256 отпечатком.")
+
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w+b",
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                dir=target.parent,
+                delete=False,
+            ) as temporary:
+                temporary_name = temporary.name
+                np.savez_compressed(
+                    temporary,
+                    artifact_version=np.asarray([ANFIS_ARTIFACT_VERSION], dtype=np.int64),
+                    model_type=np.asarray(["anfis-sugeno"], dtype=np.str_),
+                    feature_names=np.asarray(self.feature_names, dtype=np.str_),
+                    training_signature=np.asarray([training_signature], dtype=np.str_),
+                    x_min=np.asarray(self.x_min_, dtype=np.float64),
+                    x_max=np.asarray(self.x_max_, dtype=np.float64),
+                    centers=np.asarray(self.centers_, dtype=np.float64),
+                    rules=np.asarray(self.rules_, dtype=np.int64),
+                    sigma=np.asarray([self.sigma_], dtype=np.float64),
+                    ridge=np.asarray([self.ridge_], dtype=np.float64),
+                    theta=np.asarray(self.theta_, dtype=np.float64),
+                    validation_rmse=np.asarray([self.validation_rmse_], dtype=np.float64),
+                )
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_name, target)
+        finally:
+            if temporary_name and os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+        return target
+
+    @classmethod
+    def load(
+        cls,
+        path: Path | str,
+        *,
+        expected_features: Sequence[str],
+        expected_training_signature: str,
+    ) -> "ANFIS":
+        """Загружает и строго проверяет безопасный ANFIS-артефакт."""
+        source = Path(path)
+        try:
+            with np.load(source, allow_pickle=False) as artifact:
+                required = {
+                    "artifact_version",
+                    "model_type",
+                    "feature_names",
+                    "training_signature",
+                    "x_min",
+                    "x_max",
+                    "centers",
+                    "rules",
+                    "sigma",
+                    "ridge",
+                    "theta",
+                    "validation_rmse",
+                }
+                missing = required.difference(artifact.files)
+                if missing:
+                    raise ModelArtifactError(f"В артефакте ANFIS нет полей: {', '.join(sorted(missing))}.")
+                version = int(np.asarray(artifact["artifact_version"]).item())
+                model_type = str(np.asarray(artifact["model_type"]).item())
+                features = [str(value) for value in np.asarray(artifact["feature_names"]).tolist()]
+                signature = str(np.asarray(artifact["training_signature"]).item())
+                if version != ANFIS_ARTIFACT_VERSION or model_type != "anfis-sugeno":
+                    raise ModelArtifactError("Версия или тип артефакта ANFIS не поддерживается.")
+                if features != list(expected_features):
+                    raise ModelArtifactError("Состав или порядок входов ANFIS изменился.")
+                if signature != expected_training_signature:
+                    raise ModelArtifactError("ANFIS обучен на другой версии данных или настроек.")
+
+                model = cls(features)
+                model.x_min_ = np.asarray(artifact["x_min"], dtype=float)
+                model.x_max_ = np.asarray(artifact["x_max"], dtype=float)
+                model.centers_ = np.asarray(artifact["centers"], dtype=float)
+                model.rules_ = np.asarray(artifact["rules"], dtype=int)
+                model.sigma_ = float(np.asarray(artifact["sigma"]).item())
+                model.ridge_ = float(np.asarray(artifact["ridge"]).item())
+                model.theta_ = np.asarray(artifact["theta"], dtype=float)
+                model.validation_rmse_ = float(np.asarray(artifact["validation_rmse"]).item())
+        except ModelArtifactError:
+            raise
+        except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as error:
+            raise ModelArtifactError(f"Не удалось прочитать артефакт ANFIS {source.name}: {error}") from error
+        model._validate_fitted_state()
+        return model
+
     def predict(self, x: np.ndarray) -> np.ndarray:
         if self.sigma_ is None or self.theta_ is None:
             raise RuntimeError("ANFIS ещё не обучен.")
@@ -187,6 +352,10 @@ class ANFISRegressor:
             upper_raw = upper * (self.x_max_ - self.x_min_) + self.x_min_
             effects[name] = float(np.mean(self.predict(upper_raw) - self.predict(lower_raw)) / (2 * delta))
         return effects
+
+
+# Совместимость для внешнего кода предыдущей версии.
+ANFISRegressor = ANFIS
 
 
 @dataclass

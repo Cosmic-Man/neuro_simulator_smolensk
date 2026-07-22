@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -12,6 +14,7 @@ from app.fcm import (
     REALLOCATION_FOCUS_IDS,
     REVERSE_REALLOCATION_FOCUS_IDS,
 )
+from app.models import ANFIS, ModelArtifactError
 from app.service import ProblemBService
 
 
@@ -37,6 +40,51 @@ class ModelTests(unittest.TestCase):
             second = model.predict(sample.x[-5:])
             self.assertTrue(np.isfinite(first).all(), target)
             np.testing.assert_allclose(first, second)
+            self.assertIn(
+                self.service.anfis_model_sources[target],
+                {"artifact", "trained_and_cached", "trained_in_memory"},
+            )
+
+    def test_anfis_artifact_round_trip_and_compatibility_checks(self) -> None:
+        x_train = np.asarray(
+            [[0.0, 0.1], [0.2, 0.3], [0.4, 0.2], [0.6, 0.7], [0.8, 0.6], [1.0, 0.9]],
+            dtype=float,
+        )
+        y_train = 20.0 + 15.0 * x_train[:, 0] - 4.0 * x_train[:, 1]
+        x_validation = np.asarray([[0.1, 0.2], [0.5, 0.5], [0.9, 0.8]], dtype=float)
+        y_validation = 20.0 + 15.0 * x_validation[:, 0] - 4.0 * x_validation[:, 1]
+        model = ANFIS(("first", "second"))
+        signature = model.training_signature(
+            x_train,
+            y_train,
+            x_validation,
+            y_validation,
+            context="round-trip",
+        )
+        model.fit(x_train, y_train, x_validation, y_validation)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.npz"
+            model.save(path, training_signature=signature)
+            loaded = ANFIS.load(
+                path,
+                expected_features=("first", "second"),
+                expected_training_signature=signature,
+            )
+            np.testing.assert_allclose(model.predict(x_validation), loaded.predict(x_validation))
+            self.assertEqual(loaded.rule_count, model.rule_count)
+            with self.assertRaises(ModelArtifactError):
+                ANFIS.load(
+                    path,
+                    expected_features=("first", "second"),
+                    expected_training_signature="0" * 64,
+                )
+            with self.assertRaises(ModelArtifactError):
+                ANFIS.load(
+                    path,
+                    expected_features=("second", "first"),
+                    expected_training_signature=signature,
+                )
 
     def test_all_evaluation_metrics_are_finite(self) -> None:
         for target in self.service.evaluation()["targets"]:

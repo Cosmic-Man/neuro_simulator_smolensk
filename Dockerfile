@@ -12,6 +12,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY --chown=app:app . .
+RUN mkdir -p /app/runtime/models && chown -R app:app /app/runtime
 
 USER app
 EXPOSE 8000

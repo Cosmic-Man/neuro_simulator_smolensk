@@ -25,6 +25,9 @@ DATA_PATH = Path(
 )
 STATIC_DIR = PROJECT_ROOT / "app" / "static"
 SCENARIO_DIR = PROJECT_ROOT / "runtime" / "scenarios"
+ANFIS_MODEL_DIR = Path(os.getenv("ANFIS_MODEL_DIR", PROJECT_ROOT / "runtime" / "models"))
+if not ANFIS_MODEL_DIR.is_absolute():
+    ANFIS_MODEL_DIR = PROJECT_ROOT / ANFIS_MODEL_DIR
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg://neuro_simulator:neuro_simulator_dev@127.0.0.1:5432/neuro_simulator",

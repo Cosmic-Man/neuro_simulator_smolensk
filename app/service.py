@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
 
-from .config import DEFAULT_HORIZON, IMPULSE_LIMIT, TEST_END, TRAIN_END, VALIDATION_END
+from .config import ANFIS_MODEL_DIR, DEFAULT_HORIZON, IMPULSE_LIMIT, TEST_END, TRAIN_END, VALIDATION_END
 from .data import DataBundle, NODE_IDS, NODE_SPECS, load_problem_b_data
 from .fcm import EXPERT_EDGES, WeightSet, build_weight_set, fcm_forecast, fcm_step, graph_payload, impulse_vector, next_period
 from .fuzzy import FUZZY_INDEX_SPECS
-from .models import ANFISRegressor, RidgeRegressor, SampleSet, build_lag_samples, build_one_step_samples, metric_set, split_mask
+from .models import ANFIS, ModelArtifactError, RidgeRegressor, SampleSet, build_lag_samples, build_one_step_samples, metric_set, split_mask
 from .scenarios import builtin_items, get_builtin
 
 
@@ -64,11 +65,14 @@ class ProblemBService:
     def __init__(
         self,
         bundle: DataBundle | None = None,
+        model_dir: Path | str | None = None,
     ):
         self.bundle = bundle or load_problem_b_data()
+        self.model_dir = Path(model_dir) if model_dir is not None else ANFIS_MODEL_DIR
         self.ridge_models: dict[str, RidgeRegressor] = {}
         self.lag_samples: dict[str, SampleSet] = {}
-        self.anfis_models: dict[str, ANFISRegressor] = {}
+        self.anfis_models: dict[str, ANFIS] = {}
+        self.anfis_model_sources: dict[str, str] = {}
         self.anfis_samples: dict[str, SampleSet] = {}
         self.anfis_effects: dict[str, dict[str, float]] = {}
         self._train_models()
@@ -92,13 +96,35 @@ class ProblemBService:
             anfis_samples = build_one_step_samples(model_frame, config.anfis_features, target_column)
             anfis_train = split_mask(anfis_samples.periods, "train")
             anfis_validation = split_mask(anfis_samples.periods, "validation")
-            anfis = ANFISRegressor(config.anfis_features).fit(
-                anfis_samples.x[anfis_train],
-                anfis_samples.y[anfis_train],
-                anfis_samples.x[anfis_validation],
-                anfis_samples.y[anfis_validation],
+            x_train = anfis_samples.x[anfis_train]
+            y_train = anfis_samples.y[anfis_train]
+            x_validation = anfis_samples.x[anfis_validation]
+            y_validation = anfis_samples.y[anfis_validation]
+            anfis_template = ANFIS(config.anfis_features)
+            signature = anfis_template.training_signature(
+                x_train,
+                y_train,
+                x_validation,
+                y_validation,
+                context=target_id,
             )
+            artifact_path = self.model_dir / f"anfis_{target_id}.npz"
+            try:
+                anfis = ANFIS.load(
+                    artifact_path,
+                    expected_features=config.anfis_features,
+                    expected_training_signature=signature,
+                )
+                source = "artifact"
+            except ModelArtifactError:
+                anfis = anfis_template.fit(x_train, y_train, x_validation, y_validation)
+                try:
+                    anfis.save(artifact_path, training_signature=signature)
+                    source = "trained_and_cached"
+                except OSError:
+                    source = "trained_in_memory"
             self.anfis_models[target_id] = anfis
+            self.anfis_model_sources[target_id] = source
             self.anfis_samples[target_id] = anfis_samples
             self.anfis_effects[target_id] = anfis.feature_effects(anfis_samples.x[anfis_validation])
 
@@ -232,6 +258,7 @@ class ProblemBService:
                 "sigma": model.sigma_,
                 "ridge": model.ridge_,
                 "validation_rmse": model.validation_rmse_,
+                "source": self.anfis_model_sources[target_id],
             }
             for target_id, model in self.anfis_models.items()
         ]
