@@ -55,7 +55,11 @@ REALLOCATION_FOCUS_IDS = (
     "transit_budget_execution",
     "safety_budget_execution",
 )
-REALLOCATION_REDUCTION = -1.0 / (len(ADJUSTABLE_SPECS) - 1)
+REVERSE_REALLOCATION_FOCUS_IDS = (
+    "congestion",
+    "road_repair",
+)
+REALLOCATION_SHARE = 1.0 / (len(ADJUSTABLE_SPECS) - 1)
 
 
 def _point_improvement_scenario(node_id: str, label: str) -> dict[str, object]:
@@ -71,15 +75,35 @@ def _point_improvement_scenario(node_id: str, label: str) -> dict[str, object]:
 
 def _reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
     impulses = {
-        spec.id: (1.0 if spec.id == focus_id else REALLOCATION_REDUCTION)
+        spec.id: (1.0 if spec.id == focus_id else -REALLOCATION_SHARE)
         for spec in ADJUSTABLE_SPECS
     }
     return {
         "version": 1,
-        "label": f"Перераспределение · {focus_label}",
+        "label": f"+1 одному, −1 суммарно остальным · {focus_label}",
         "description": (
-            f"Фактор «{focus_label}» получает +1. От каждого из остальных управляемых факторов отнимается по 0,10: "
+            f"Тип перераспределения: +1 одному фактору, −1 суммарно остальным. Фактор «{focus_label}» получает +1. "
+            "От каждого из остальных управляемых факторов отнимается по 0,10: "
             "суммарное снижение равно −1, поэтому общий баланс импульсов равен нулю."
+        ),
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": impulses,
+    }
+
+
+def _reverse_reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
+    impulses = {
+        spec.id: (-1.0 if spec.id == focus_id else REALLOCATION_SHARE)
+        for spec in ADJUSTABLE_SPECS
+    }
+    return {
+        "version": 1,
+        "label": f"−1 одному, +1 суммарно остальным · {focus_label}",
+        "description": (
+            f"Тип перераспределения: −1 одному фактору, +1 суммарно остальным. Фактор «{focus_label}» получает −1. "
+            "Каждый из остальных управляемых факторов получает по +0,10: суммарный прирост равен +1, "
+            "поэтому общий баланс импульсов равен нулю."
         ),
         "mode": "adapted",
         "horizon": 8,
@@ -97,6 +121,10 @@ BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
     **{
         f"reallocate_{focus_id}": _reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
         for focus_id in REALLOCATION_FOCUS_IDS
+    },
+    **{
+        f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
+        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
     },
     "inertial": {
         "version": 1,

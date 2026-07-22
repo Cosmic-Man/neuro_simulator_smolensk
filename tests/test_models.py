@@ -6,7 +6,12 @@ import unittest
 import numpy as np
 
 from app.data import NODE_SPECS
-from app.fcm import BUILTIN_SCENARIOS, EXPERT_EDGES, REALLOCATION_FOCUS_IDS
+from app.fcm import (
+    BUILTIN_SCENARIOS,
+    EXPERT_EDGES,
+    REALLOCATION_FOCUS_IDS,
+    REVERSE_REALLOCATION_FOCUS_IDS,
+)
 from app.service import ProblemBService
 
 
@@ -77,6 +82,26 @@ class ModelTests(unittest.TestCase):
             self.assertTrue(all(value < 0 for value in negatives))
             self.assertAlmostEqual(sum(negatives), -1.0)
             self.assertAlmostEqual(sum(impulses.values()), 0.0)
+
+        reverse_scenarios = {
+            scenario_id: scenario
+            for scenario_id, scenario in BUILTIN_SCENARIOS.items()
+            if scenario_id.startswith("reverse_reallocate_")
+        }
+        self.assertEqual(len(reverse_scenarios), len(REVERSE_REALLOCATION_FOCUS_IDS))
+        kind_by_id = {spec.id: spec.kind for spec in NODE_SPECS}
+        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS:
+            self.assertNotEqual(kind_by_id[focus_id], "target")
+            scenario = reverse_scenarios[f"reverse_reallocate_{focus_id}"]
+            impulses = scenario["impulses"]
+            self.assertEqual(set(impulses), adjustable)
+            self.assertEqual(impulses[focus_id], -1.0)
+            positives = [value for node, value in impulses.items() if node != focus_id]
+            self.assertTrue(all(value > 0 for value in positives))
+            self.assertAlmostEqual(sum(positives), 1.0)
+            self.assertAlmostEqual(sum(impulses.values()), 0.0)
+
+        self.assertEqual(len(BUILTIN_SCENARIOS), 17)
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
