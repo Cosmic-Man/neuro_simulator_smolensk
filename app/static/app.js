@@ -49,23 +49,28 @@ const sectionGuide = [
     explanation: "Собирает множество разрозненных показателей в понятные оценки от 0 до 100 и показывает, из каких направлений складывается общая ситуация.",
   },
   {
-    id: "models", index: "06", title: "Проверка моделей", collapsible: false,
+    id: "models", index: "06", title: "Проверка моделей", collapsible: true,
     explanation: "Показывает, насколько прогнозы совпадали с уже известными данными. Заказчик видит, на какой метод можно опираться и где сохраняется неопределённость.",
   },
   {
-    id: "map", index: "07", title: "Карта связей FCM", collapsible: false,
+    id: "map", index: "07", title: "Карта связей FCM", collapsible: true,
     explanation: "Объясняет, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. Карта помогает проследить логику уже полученного сценарного результата.",
   },
 ];
 
 function resizeSectionVisuals(section) {
-  window.requestAnimationFrame(() => {
+  const resize = () => {
     section.querySelectorAll(".js-plotly-plot").forEach(plot => window.Plotly?.Plots?.resize(plot));
     if (section.id === "map" && state.cy) {
       state.cy.resize();
       state.cy.fit(undefined, 36);
     }
+  };
+  window.requestAnimationFrame(() => {
+    resize();
+    window.requestAnimationFrame(resize);
   });
+  window.setTimeout(resize, 240);
 }
 
 function setAccordionExpanded(section, expanded) {
@@ -74,6 +79,7 @@ function setAccordionExpanded(section, expanded) {
   if (!toggle || !content) return;
   toggle.setAttribute("aria-expanded", String(expanded));
   content.hidden = !expanded;
+  section.classList.toggle("accordion-expanded", expanded);
   toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть раздел" : "Развернуть раздел";
   if (expanded) resizeSectionVisuals(section);
 }

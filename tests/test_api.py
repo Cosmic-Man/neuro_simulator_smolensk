@@ -4,10 +4,9 @@ import unittest
 import uuid
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.database import SessionLocal
-from app.db_models import AuditLog, AuthSession, Scenario, User
+from app.database import Base, build_engine, get_db
 from app.main import app
 from app.security import create_user
 
@@ -18,12 +17,23 @@ PASSWORD = "DemoPassword2026!"
 class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with SessionLocal() as db:
-            db.execute(delete(AuditLog))
-            db.execute(delete(AuthSession))
-            db.execute(delete(Scenario))
-            db.execute(delete(User))
-            db.commit()
+        cls.engine = build_engine("sqlite+pysqlite:///:memory:")
+        if cls.engine.dialect.name != "sqlite":
+            raise RuntimeError("API-тесты разрешено выполнять только на SQLite")
+        Base.metadata.create_all(cls.engine)
+        cls.session_factory = sessionmaker(
+            bind=cls.engine,
+            class_=Session,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+
+        def override_get_db():
+            with cls.session_factory() as db:
+                yield db
+
+        app.dependency_overrides[get_db] = override_get_db
+        with cls.session_factory() as db:
             for username, role in (("api-observer", "observer"), ("api-user", "user"), ("api-admin", "admin")):
                 create_user(
                     db,
@@ -43,6 +53,9 @@ class ApiTests(unittest.TestCase):
         cls.observer.close()
         cls.user.close()
         cls.admin.close()
+        app.dependency_overrides.pop(get_db, None)
+        Base.metadata.drop_all(cls.engine)
+        cls.engine.dispose()
 
     @classmethod
     def login(cls, username: str) -> tuple[TestClient, str]:
