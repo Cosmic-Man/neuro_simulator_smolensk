@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -24,7 +26,7 @@ from .models import (
     split_mask,
     smape,
 )
-from .scenarios import builtin_items, get_builtin
+from .scenarios import builtin_items, get_builtin, validate_scenario
 
 
 @dataclass(frozen=True)
@@ -142,9 +144,14 @@ class ProblemBService:
         self,
         bundle: DataBundle | None = None,
         model_dir: Path | str | None = None,
+        *,
+        force_retrain: bool = False,
     ):
         self.bundle = bundle or load_problem_b_data()
         self.model_dir = Path(model_dir) if model_dir is not None else ANFIS_MODEL_DIR
+        self.force_retrain = force_retrain
+        self.trained_at = datetime.now(timezone.utc)
+        self.source_fingerprint = self._file_fingerprint(self.bundle.source_path)
         self.ridge_models: dict[str, RidgeRegressor] = {}
         self.lag_samples: dict[str, SampleSet] = {}
         self.anfis_models: dict[str, ANFIS] = {}
@@ -158,12 +165,79 @@ class ProblemBService:
         self._sensitivity_cache = self._build_sensitivity("adapted")
         self._recommendations_cache = self._build_improvement_recommendations()
 
+    @staticmethod
+    def _file_fingerprint(path: Path | str) -> str:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as source:
+            for chunk in iter(lambda: source.read(65536), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _operational_windows(samples: SampleSet) -> tuple[np.ndarray, np.ndarray]:
+        """Отделяет короткое окно для выбора гиперпараметров до финального обучения на всех строках."""
+        calibration_size = min(8, max(4, len(samples.y) // 10))
+        split = len(samples.y) - calibration_size
+        if split < 8:
+            raise ValueError("Недостаточно кварталов для переобучения рабочей модели")
+        return np.arange(split), np.arange(split, len(samples.y))
+
+    def _fit_operational_anfis(self, target_id: str, config: TargetConfig, samples: SampleSet) -> ANFIS:
+        tuning_rows, calibration_rows = self._operational_windows(samples)
+        template = ANFIS(config.anfis_features)
+        signature = template.training_signature(
+            samples.x,
+            samples.y,
+            samples.x[calibration_rows],
+            samples.y[calibration_rows],
+            context=f"{target_id}:operational-full-history-v1",
+        )
+        artifact_path = self.model_dir / f"anfis_{target_id}.npz"
+        if not self.force_retrain:
+            try:
+                model = ANFIS.load(
+                    artifact_path,
+                    expected_features=config.anfis_features,
+                    expected_training_signature=signature,
+                )
+                self.anfis_model_sources[target_id] = "artifact"
+                return model
+            except ModelArtifactError:
+                pass
+
+        tuned = template.fit(
+            samples.x[tuning_rows],
+            samples.y[tuning_rows],
+            samples.x[calibration_rows],
+            samples.y[calibration_rows],
+        )
+        validation_rmse = tuned.validation_rmse_
+        model = ANFIS(
+            config.anfis_features,
+            sigma_candidates=(float(tuned.sigma_),),
+            ridge_candidates=(float(tuned.ridge_),),
+        ).fit(
+            samples.x,
+            samples.y,
+            samples.x[calibration_rows],
+            samples.y[calibration_rows],
+        )
+        # Показываем честную ошибку окна настройки, а не ошибку повторного прогона
+        # по строкам, которые уже вошли в финальную рабочую модель.
+        model.validation_rmse_ = validation_rmse
+        try:
+            model.save(artifact_path, training_signature=signature)
+            source = "trained_and_cached"
+        except OSError:
+            source = "trained_in_memory"
+        self.anfis_model_sources[target_id] = source
+        return model
+
     def _train_models(self) -> None:
         for target_id, config in TARGETS.items():
             target_series = self.bundle.raw[config.raw_column]
             lag_samples = build_lag_samples(target_series)
-            train = split_mask(lag_samples.periods, "train")
-            ridge = RidgeRegressor(alpha=1.0).fit(lag_samples.x[train], lag_samples.y[train])
+            ridge = RidgeRegressor(alpha=1.0).fit(lag_samples.x, lag_samples.y)
             self.lag_samples[target_id] = lag_samples
             self.ridge_models[target_id] = ridge
 
@@ -171,39 +245,27 @@ class ProblemBService:
             target_column = f"target__{target_id}"
             model_frame[target_column] = target_series
             anfis_samples = build_one_step_samples(model_frame, config.anfis_features, target_column)
-            anfis_train = split_mask(anfis_samples.periods, "train")
-            anfis_validation = split_mask(anfis_samples.periods, "validation")
-            x_train = anfis_samples.x[anfis_train]
-            y_train = anfis_samples.y[anfis_train]
-            x_validation = anfis_samples.x[anfis_validation]
-            y_validation = anfis_samples.y[anfis_validation]
-            anfis_template = ANFIS(config.anfis_features)
-            signature = anfis_template.training_signature(
-                x_train,
-                y_train,
-                x_validation,
-                y_validation,
-                context=target_id,
-            )
-            artifact_path = self.model_dir / f"anfis_{target_id}.npz"
-            try:
-                anfis = ANFIS.load(
-                    artifact_path,
-                    expected_features=config.anfis_features,
-                    expected_training_signature=signature,
-                )
-                source = "artifact"
-            except ModelArtifactError:
-                anfis = anfis_template.fit(x_train, y_train, x_validation, y_validation)
-                try:
-                    anfis.save(artifact_path, training_signature=signature)
-                    source = "trained_and_cached"
-                except OSError:
-                    source = "trained_in_memory"
+            anfis = self._fit_operational_anfis(target_id, config, anfis_samples)
             self.anfis_models[target_id] = anfis
-            self.anfis_model_sources[target_id] = source
             self.anfis_samples[target_id] = anfis_samples
-            self.anfis_effects[target_id] = anfis.feature_effects(anfis_samples.x[anfis_validation])
+            recent_rows = min(8, len(anfis_samples.x))
+            self.anfis_effects[target_id] = anfis.feature_effects(anfis_samples.x[-recent_rows:])
+
+    def training_status(self, current_path: Path | str | None = None) -> dict[str, Any]:
+        current_fingerprint = self._file_fingerprint(current_path or self.bundle.source_path)
+        latest_period = str(self.bundle.raw.index[-1])
+        return {
+            "dataset": self.bundle.source_path.name,
+            "trained_at": self.trained_at.isoformat(),
+            "trained_through": latest_period,
+            "source_rows": len(self.bundle.source_features),
+            "processed_rows": len(self.bundle.features),
+            "training_samples": min(len(samples.y) for samples in self.anfis_samples.values()),
+            "new_quarters": sum(str(period) > TEST_END for period in self.bundle.raw.index),
+            "models": len(self.anfis_models),
+            "pending_retrain": current_fingerprint != self.source_fingerprint,
+            "strategy": "Рабочие ANFIS и веса FCM обучены на всех подтверждённых кварталах; контрольные выборки notebook сохранены отдельно.",
+        }
 
     def _clip_prediction(self, target_id: str, values: np.ndarray) -> np.ndarray:
         values = np.asarray(values, dtype=float)
@@ -514,7 +576,8 @@ class ProblemBService:
             "scenarios": builtin_items(),
             "fuzzy_indices": [{"id": spec.id, "label": spec.label, "rules": spec.rule_count} for spec in FUZZY_INDEX_SPECS],
             "anfis": anfis,
-            "proxies": [{"id": "digital_mobility", "description": "Прямого ряда цифровизации нет; сценарий воздействует на регулярность, скорость и загруженность."}],
+            "operational_training": self.training_status(),
+            "proxies": [{"id": "digital_mobility", "label": "Цифровая мобильность", "description": "Прямого ряда цифровизации нет; сценарий воздействует на регулярность, скорость и загруженность."}],
         }
 
     def history(self) -> dict[str, Any]:
@@ -638,6 +701,10 @@ class ProblemBService:
                         "label": variable.name,
                         "kind": "input",
                         "universe": [variable.universe_min, variable.universe_max],
+                        "quantiles": [
+                            round(float(value), 6)
+                            for value in self.bundle.pipeline_features[feature].quantile([0.25, 0.5, 0.75])
+                        ],
                         "terms": [
                             {"name": term.name, "type": term.mf_type, "params": list(term.params)}
                             for term in variable.terms
@@ -754,6 +821,39 @@ class ProblemBService:
             return "Средний уровень — есть заметный резерв улучшения"
         return "Устойчивый уровень — меры помогут закрепить результат"
 
+    @staticmethod
+    def _indicator_summary(
+        series: pd.Series,
+        label: str,
+        unit: str,
+        *,
+        lower_is_better: bool = False,
+    ) -> dict[str, Any]:
+        current = float(series.iloc[-1])
+        previous = float(series.iloc[-2])
+        change_percent = None if abs(previous) < 1e-12 else (current - previous) / abs(previous) * 100.0
+        delta = current - previous
+        improved = delta < 0 if lower_is_better else delta > 0
+        if abs(delta) < 1e-9:
+            trend = "Без изменений к прошлому кварталу"
+            tone = "neutral"
+        elif improved:
+            trend = "Показатель улучшился к прошлому кварталу"
+            tone = "positive"
+        else:
+            trend = "Показатель ухудшился — нужны меры"
+            tone = "negative"
+        return {
+            "label": label,
+            "value": round(current, 3),
+            "previous": round(previous, 3),
+            "unit": unit,
+            "change_percent": None if change_percent is None else round(change_percent, 2),
+            "lower_is_better": lower_is_better,
+            "trend": trend,
+            "tone": tone,
+        }
+
     def _build_improvement_recommendations(self) -> dict[str, Any]:
         """Пять понятных управленческих действий для каждой цели заказчика."""
         labels = {spec.id: spec.label for spec in NODE_SPECS}
@@ -769,6 +869,29 @@ class ProblemBService:
             "transport_regularity": "Регулярность транспорта",
             "transport_accessibility": "Транспортная доступность",
             "integrated_mobility": "Сбалансированный результат",
+        }
+        indicators = {
+            "traffic_safety": self._indicator_summary(
+                self.bundle.raw["accidents"],
+                "ДТП на 10 тыс. жителей",
+                "ДТП на 10 тыс.",
+                lower_is_better=True,
+            ),
+            "transport_regularity": self._indicator_summary(
+                self.bundle.raw["regularity"],
+                "Рейсы по расписанию",
+                "%",
+            ),
+            "transport_accessibility": self._indicator_summary(
+                self.bundle.raw["accessibility"],
+                "Транспортная доступность",
+                "баллов",
+            ),
+            "integrated_mobility": self._indicator_summary(
+                self.bundle.raw["integrated_mobility"],
+                "Сбалансированный индекс",
+                "баллов",
+            ),
         }
         for target_id, target_label in target_labels.items():
             ranked = sorted(
@@ -803,6 +926,7 @@ class ProblemBService:
                     "label": target_label,
                     "current": round(current, 2),
                     "status": self._level_status(current),
+                    "indicator": indicators[target_id],
                     "items": items,
                 }
             )
@@ -871,7 +995,7 @@ class ProblemBService:
         custom_impulses: Mapping[str, float] | None = None,
         scenario_payload: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        scenario = dict(scenario_payload) if scenario_payload is not None else get_builtin(scenario_id)
+        scenario = validate_scenario(scenario_payload) if scenario_payload is not None else get_builtin(scenario_id)
         if scenario is None:
             raise ValueError(f"Неизвестный сценарий: {scenario_id}")
         selected_mode = mode or str(scenario["mode"])
@@ -930,7 +1054,7 @@ class ProblemBService:
         )
 
         return {
-            "scenario": {"id": scenario_id, "label": scenario["label"], "description": scenario["description"], "builtin": scenario["builtin"]},
+            "scenario": {"id": scenario["id"], "label": scenario["label"], "description": scenario["description"], "builtin": scenario["builtin"]},
             "mode": selected_mode,
             "horizon": selected_horizon,
             "applied_impulses": [{"node": node, "label": label_by_id[node], "value": round(value, 4)} for node, value in impulses.items()],

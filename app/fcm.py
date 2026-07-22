@@ -49,47 +49,11 @@ EXPERT_EDGES = (
 
 
 ADJUSTABLE_SPECS = tuple(spec for spec in NODE_SPECS if spec.adjustable)
-IMPROVEMENT_SPECS = tuple(spec for spec in ADJUSTABLE_SPECS if spec.id != "congestion")
-REALLOCATION_FOCUS_IDS = (
-    "road_budget_execution",
-    "transit_budget_execution",
-    "safety_budget_execution",
-)
 REVERSE_REALLOCATION_FOCUS_IDS = (
     "congestion",
     "road_repair",
 )
 REALLOCATION_SHARE = 1.0 / (len(ADJUSTABLE_SPECS) - 1)
-
-
-def _point_improvement_scenario(node_id: str, label: str) -> dict[str, object]:
-    return {
-        "version": 1,
-        "label": f"Точечный +1 · {label}",
-        "description": f"Только фактор «{label}» получает максимальный положительный импульс +1; остальные факторы не изменяются.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {node_id: 1.0},
-    }
-
-
-def _reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
-    impulses = {
-        spec.id: (1.0 if spec.id == focus_id else -REALLOCATION_SHARE)
-        for spec in ADJUSTABLE_SPECS
-    }
-    return {
-        "version": 1,
-        "label": f"+1 одному, −1 суммарно остальным · {focus_label}",
-        "description": (
-            f"Тип перераспределения: +1 одному фактору, −1 суммарно остальным. Фактор «{focus_label}» получает +1. "
-            "От каждого из остальных управляемых факторов отнимается по 0,10: "
-            "суммарное снижение равно −1, поэтому общий баланс импульсов равен нулю."
-        ),
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": impulses,
-    }
 
 
 def _reverse_reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
@@ -165,19 +129,6 @@ RELATION_SCENARIOS: dict[str, dict[str, object]] = {
 }
 
 BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
-    **{
-        f"improve_{spec.id}": _point_improvement_scenario(spec.id, spec.label)
-        for spec in IMPROVEMENT_SPECS
-    },
-    **{
-        f"reallocate_{focus_id}": _reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
-        for focus_id in REALLOCATION_FOCUS_IDS
-    },
-    **{
-        f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
-        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
-    },
-    **RELATION_SCENARIOS,
     "inertial": {
         "version": 1,
         "label": "Инерционный · без импульсов",
@@ -186,6 +137,11 @@ BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
         "horizon": 8,
         "impulses": {},
     },
+    **{
+        f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
+        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
+    },
+    **RELATION_SCENARIOS,
     "custom": {
         "version": 1,
         "label": "Пользовательский · ручная настройка",

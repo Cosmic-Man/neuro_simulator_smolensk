@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.data import FEATURE_NAMES, load_problem_b_data
 from app.datasets import DatasetStore
+from app.service import ProblemBService
 
 
 class DatasetStoreTests(unittest.TestCase):
@@ -38,6 +39,27 @@ class DatasetStoreTests(unittest.TestCase):
     def test_paths_cannot_escape_dataset_directory(self) -> None:
         with self.assertRaises(ValueError):
             self.store.read("../smolensk_dataset_shared.xlsx")
+
+    def test_new_quarter_marks_model_pending_until_full_retraining(self) -> None:
+        model_dir = Path(self.temp_dir.name) / "models"
+        service = ProblemBService(
+            bundle=load_problem_b_data(self.target),
+            model_dir=model_dir,
+        )
+        latest_values = self.store.read(self.target.name)["rows_data"][-1]["values"]
+        period = self.store.append_row(self.target.name, latest_values, load_problem_b_data)
+        self.assertEqual(period, "2026Q1")
+        self.assertTrue(service.training_status(self.target)["pending_retrain"])
+
+        refreshed = ProblemBService(
+            bundle=load_problem_b_data(self.target),
+            model_dir=model_dir,
+            force_retrain=True,
+        )
+        status = refreshed.training_status(self.target)
+        self.assertFalse(status["pending_retrain"])
+        self.assertEqual(status["trained_through"], "2026Q1")
+        self.assertEqual(status["new_quarters"], 1)
 
 
 if __name__ == "__main__":

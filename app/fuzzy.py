@@ -12,10 +12,15 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_RULE_DIR = Path(
-    os.getenv("PIPELINE_RULE_DIR", PROJECT_ROOT / "colab" / "colab_kirill")
+    os.getenv("PIPELINE_RULE_DIR", PROJECT_ROOT / "ruls")
 )
 if not PIPELINE_RULE_DIR.is_absolute():
     PIPELINE_RULE_DIR = PROJECT_ROOT / PIPELINE_RULE_DIR
+
+# Старое окружение могло сохранить путь colab/colab_kirill. Если в указанном
+# каталоге уже нет JSON-правил, используем актуальную папку проекта.
+if not (PIPELINE_RULE_DIR / "urban_city_area_rules.json").is_file():
+    PIPELINE_RULE_DIR = PROJECT_ROOT / "ruls"
 
 
 OUTPUT_TERMS = (
@@ -432,6 +437,8 @@ def load_rule_definitions(
     spec: FuzzyIndexSpec,
 ) -> tuple[tuple[dict[str, str], str], ...]:
     path = PIPELINE_RULE_DIR / spec.rule_filename
+    if not path.is_file():
+        path = PROJECT_ROOT / "ruls" / spec.rule_filename
     if not path.is_file():
         raise FileNotFoundError(
             f"Не найден канонический файл правил Pipeline: {path}"

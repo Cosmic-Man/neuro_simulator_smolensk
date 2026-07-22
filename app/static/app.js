@@ -6,12 +6,11 @@ const state = {
   analysis: null,
   datasets: null,
   datasetDetail: null,
+  modelStatus: null,
   scenarios: [],
   baseImpulses: {},
   graph: null,
   cy: null,
-  user: null,
-  csrfToken: null,
   budgetAnalysis: null,
   improvementRecommendations: null,
   eventsBound: false,
@@ -31,49 +30,54 @@ const baseLayout = {
   legend: { orientation: "h", y: 1.12, x: 0 },
 };
 
-const sectionGuide = [
+const customerGuide = [
   {
-    id: "scenarios", index: "01", title: "Лаборатория FCM-сценариев", collapsible: true,
-    explanation: "Позволяет сравнить управленческие варианты: изменить воздействия, увидеть ожидаемый результат в процентах, сохранить сценарий и показать его выбранным наблюдателям.",
+    id: "scenarios", index: "01", title: "Лаборатория решений",
+    explanation: "Выберите проблемную цель, получите пять мер, задайте воздействия и сравните ожидаемый эффект с инерционным вариантом.",
   },
   {
-    id: "sensitivity", index: "02", title: "Чувствительность", collapsible: true,
-    explanation: "Ранжирует направления по силе влияния на выбранную цель. Чем заметнее изменение, тем больший модельный эффект ожидается от работы с этим фактором.",
-  },
-  {
-    id: "overview", index: "03", title: "Текущее состояние", collapsible: true,
+    id: "overview", index: "02", title: "Текущее состояние",
     explanation: "Краткая управленческая сводка последнего доступного периода: где транспортная система находится сейчас и какие значения используются как точка отсчёта.",
   },
   {
-    id: "history", index: "04", title: "История и сезонность", collapsible: true,
+    id: "datasets", index: "03", title: "Данные для расчёта",
+    explanation: "Показывает активный XLSX. Пользователь может выбрать файл, проверить квартал, исправить 31 показатель или добавить новую строку.",
+  },
+];
+
+const technicalGuide = [
+  {
+    id: "sensitivity", index: "A1", title: "Чувствительность",
+    explanation: "Ранжирует направления по силе влияния на выбранную цель.",
+  },
+  {
+    id: "history", index: "A2", title: "Динамика target и показателей",
     explanation: "Показывает устойчивость изменений во времени, сезонные колебания и периоды улучшения или ухудшения — чтобы не принять единичный всплеск за долгосрочный тренд.",
   },
   {
-    id: "indices", index: "05", title: "Сводные индексы", collapsible: true,
+    id: "indices", index: "A3", title: "Сводные индексы",
     explanation: "Собирает множество разрозненных показателей в понятные оценки от 0 до 100 и показывает, из каких направлений складывается общая ситуация.",
   },
   {
-    id: "models", index: "06", title: "Проверка моделей", collapsible: true,
+    id: "models", index: "A4", title: "Проверка моделей",
     explanation: "Показывает, насколько прогнозы совпадали с уже известными данными. Заказчик видит, на какой метод можно опираться и где сохраняется неопределённость.",
   },
   {
-    id: "map", index: "07", title: "Карта связей FCM", collapsible: true,
+    id: "map", index: "A5", title: "Карта связей FCM",
     explanation: "Объясняет, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. Карта помогает проследить логику уже полученного сценарного результата.",
   },
   {
-    id: "analysis", index: "08", title: "Анализ данных Pipeline", collapsible: true,
+    id: "analysis", index: "A6", title: "Boxplot и функции принадлежности",
     explanation: "Показывает исходную проверку данных: типичные диапазоны, выбросы, нечёткие границы оценок и веса итогового индекса. Это делает расчёт из Pipeline.ipynb наглядным для заказчика.",
   },
-  {
-    id: "datasets", index: "09", title: "Данные для расчёта", collapsible: true,
-    explanation: "Позволяет заказчику увидеть, какой XLSX определяет расчёт, сравнить два файла и проверить строки. Пользователь и администратор могут исправить квартал или добавить новый.",
-  },
 ];
+
+const sectionGuide = [...customerGuide, ...technicalGuide];
 
 function resizeSectionVisuals(section) {
   const resize = () => {
     section.querySelectorAll(".js-plotly-plot").forEach(plot => window.Plotly?.Plots?.resize(plot));
-    if (section.id === "map" && state.cy) {
+    if ((section.id === "map" || section.querySelector("#map")) && state.cy) {
       state.cy.resize();
       state.cy.fit(undefined, 36);
     }
@@ -92,14 +96,16 @@ function setAccordionExpanded(section, expanded) {
   toggle.setAttribute("aria-expanded", String(expanded));
   content.hidden = !expanded;
   section.classList.toggle("accordion-expanded", expanded);
-  toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть раздел" : "Развернуть раздел";
+  toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть графики" : "Развернуть графики";
   if (expanded) resizeSectionVisuals(section);
 }
 
 function initializePageStructure() {
   const main = document.querySelector("main.shell");
-  const admin = document.getElementById("adminPanel");
-  sectionGuide.forEach(item => main.insertBefore(document.getElementById(item.id), admin));
+  const appendix = document.getElementById("technicalAppendix");
+  const appendixContent = document.getElementById("technicalAppendixContent");
+  customerGuide.forEach(item => main.insertBefore(document.getElementById(item.id), appendix));
+  technicalGuide.forEach(item => appendixContent.appendChild(document.getElementById(item.id)));
 
   sectionGuide.forEach(item => {
     const section = document.getElementById(item.id);
@@ -113,30 +119,20 @@ function initializePageStructure() {
       <span id="help-${item.id}" class="section-help-tooltip" role="tooltip">${escapeHtml(item.explanation)}</span>`;
     heading.querySelector(":scope > div").appendChild(help);
 
-    if (!item.collapsible) return;
-    const content = document.createElement("div");
-    content.id = `${item.id}Content`;
-    content.className = "accordion-content";
-    while (heading.nextSibling) content.appendChild(heading.nextSibling);
+  });
 
-    const toggle = document.createElement("button");
-    toggle.className = "accordion-toggle";
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-controls", content.id);
-    toggle.innerHTML = `<span><strong class="accordion-action">Развернуть раздел</strong><small>${escapeHtml(item.title)} · нажмите здесь, чтобы показать содержимое</small></span><b aria-hidden="true">⌄</b>`;
-    toggle.addEventListener("click", () => setAccordionExpanded(section, toggle.getAttribute("aria-expanded") !== "true"));
-    section.append(toggle, content);
-    content.hidden = true;
+  appendix.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
+    const toggle = event.currentTarget;
+    setAccordionExpanded(appendix, toggle.getAttribute("aria-expanded") !== "true");
   });
 
   document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener("click", () => {
     const target = document.getElementById(link.getAttribute("href").slice(1));
-    if (target) setAccordionExpanded(target, true);
+    if (target && (target === appendix || appendix.contains(target))) setAccordionExpanded(appendix, true);
   }));
   if (window.location.hash) {
     const target = document.getElementById(window.location.hash.slice(1));
-    if (target) setAccordionExpanded(target, true);
+    if (target && (target === appendix || appendix.contains(target))) setAccordionExpanded(appendix, true);
   }
 }
 
@@ -148,7 +144,6 @@ async function api(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  if (state.csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method)) headers["X-CSRF-Token"] = state.csrfToken;
   const response = await fetch(path, { ...options, method, headers, credentials: "same-origin" });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -203,7 +198,7 @@ function renderOverview() {
   const groups = [...new Set(state.metadata.features.map(feature => feature.group))];
   document.getElementById("sheetTags").innerHTML = groups.map(group => `<span class="tag">${group}</span>`).join("");
   document.getElementById("proxyList").innerHTML = state.metadata.proxies.map(proxy =>
-    `<div class="proxy-item"><strong>${proxy.id}</strong><span>${proxy.description}</span></div>`).join("");
+    `<div class="proxy-item"><strong>${escapeHtml(proxy.label || ({ digital_mobility: "Цифровая мобильность" }[proxy.id]) || proxy.id)}</strong><span>${escapeHtml(proxy.description)}</span></div>`).join("");
 }
 
 function historySeries(id) { return state.history.series.find(item => item.id === id); }
@@ -342,10 +337,20 @@ function renderMembershipVariableOptions() {
 function renderMembershipPlot() {
   const selected = state.analysis.memberships.find(item => item.id === document.getElementById("membershipIndex").value);
   const variable = selected.variables.find(item => item.id === document.getElementById("membershipVariable").value);
+  const quantileColors = [colors.muted, colors.gold, colors.muted];
+  const shapes = (variable.quantiles || []).map((value, index) => ({
+    type: "line", x0: value, x1: value, y0: 0, y1: 1,
+    line: { color: quantileColors[index], width: index === 1 ? 2 : 1, dash: "dash" },
+  }));
+  const annotations = (variable.quantiles || []).map((value, index) => ({
+    x: value, y: 1.02, text: ["Q1", "Медиана", "Q3"][index], showarrow: false,
+    font: { size: 10, color: quantileColors[index] }, yanchor: "bottom",
+  }));
   Plotly.react("membershipPlot", membershipTraces(variable), {
     ...baseLayout, margin: { l: 55, r: 18, t: 24, b: 52 },
     xaxis: { ...baseLayout.xaxis, title: variable.label },
     yaxis: { ...baseLayout.yaxis, title: "степень принадлежности", range: [0, 1.05] },
+    shapes, annotations,
   }, plotConfig);
 }
 
@@ -404,14 +409,28 @@ function datasetRowValues() {
 
 function populateDatasetRow(period) {
   const isNew = period === "__new__";
-  const row = isNew ? null : state.datasetDetail.rows_data.find(item => item.period === period);
+  const row = isNew
+    ? state.datasetDetail.rows_data.at(-1)
+    : state.datasetDetail.rows_data.find(item => item.period === period);
   document.querySelectorAll("#datasetFields input[data-feature]").forEach(input => {
-    input.value = row ? row.values[input.dataset.feature] : 0;
+    input.value = row?.values[input.dataset.feature] ?? 0;
   });
   const next = state.datasetDetail.next_period;
   document.getElementById("datasetEditorHint").textContent = isNew
-    ? `Будет добавлен квартал ${next}. Заполните 31 показатель; нули разрешены для демонстрационной заготовки.`
+    ? `Будет добавлен квартал ${next}. Для удобства скопированы прошлые значения — замените их фактическими данными.`
     : `Редактируется квартал ${period}. Сохранение проходит полную проверку Pipeline до замены XLSX.`;
+}
+
+function renderTrainingStatus() {
+  if (!state.modelStatus) return;
+  const card = document.querySelector(".retraining-card");
+  const button = document.getElementById("retrainModels");
+  card.classList.toggle("pending", state.modelStatus.pending_retrain);
+  card.classList.toggle("ready", !state.modelStatus.pending_retrain);
+  document.getElementById("modelTrainingStatus").textContent = state.modelStatus.pending_retrain
+    ? `Новые данные сохранены, но рекомендации пока используют период по ${state.modelStatus.trained_through}. Нажмите переобучение.`
+    : `Модель актуальна по ${state.modelStatus.trained_through}: ${state.modelStatus.source_rows} кварталов, ${state.modelStatus.models} рабочих ANFIS-модели.`;
+  button.textContent = state.modelStatus.pending_retrain ? "Переобучить на новых данных" : "Переобучить заново";
 }
 
 function renderDatasetDetail() {
@@ -427,7 +446,7 @@ function renderDatasetDetail() {
     if (!group) { group = { name: column.group, columns: [] }; groups.push(group); }
     group.columns.push(column);
   });
-  const readonly = state.user.role === "observer" ? "disabled" : "";
+  const readonly = "";
   document.getElementById("datasetFields").innerHTML = groups.map(group => `<fieldset>
     <legend>${escapeHtml(group.name)}</legend><div>${group.columns.map(column => `<label>${escapeHtml(column.label)}
       <input type="number" step="any" min="0" data-feature="${escapeHtml(column.id)}" ${readonly}></label>`).join("")}</div></fieldset>`).join("");
@@ -476,11 +495,32 @@ async function saveDatasetRow() {
       : `/api/datasets/${encodeURIComponent(name)}/rows/${encodeURIComponent(period)}`;
     const result = await api(path, { method: isNew ? "POST" : "PUT", body: JSON.stringify({ values: datasetRowValues() }) });
     state.datasetDetail = result.dataset;
-    showToast(`${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period}.`);
-    if (result.active === name) await initializeApplication();
-    else renderDatasetDetail();
+    state.modelStatus = result.model_status;
+    state.datasets = await api("/api/datasets");
+    renderDatasetCatalog();
+    renderDatasetDetail();
+    renderTrainingStatus();
+    showToast(result.active === name
+      ? `${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period}. Теперь переобучите модель.`
+      : `${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period} в резервном файле.`);
   } catch (error) { showToast(error.message, true); }
-  finally { button.disabled = false; button.textContent = "Сохранить строку"; }
+  finally { button.disabled = false; button.textContent = "Сохранить данные"; }
+}
+
+async function retrainModels() {
+  const button = document.getElementById("retrainModels");
+  button.disabled = true; button.textContent = "Переобучение…";
+  try {
+    state.modelStatus = await api("/api/models/retrain", { method: "POST" });
+    showToast(`Модель обновлена по ${state.modelStatus.trained_through}. Рекомендации пересчитаны.`);
+    await initializeApplication();
+  } catch (error) {
+    showToast(error.message, true);
+    renderTrainingStatus();
+  } finally {
+    button.disabled = false;
+    renderTrainingStatus();
+  }
 }
 
 function selectedEvaluation() {
@@ -519,6 +559,50 @@ function renderEvaluation() {
   }).join("");
 }
 
+function renderNotebookPlots() {
+  const targetSeries = state.history.series.find(item => item.id === "pipeline_target");
+  Plotly.react("notebookTargetPlot", [{
+    x: state.history.periods, y: targetSeries.values, name: "target", type: "scatter", mode: "lines+markers",
+    line: { color: colors.blue, width: 2 }, marker: { size: 5 },
+    hovertemplate: "%{x}<br>target: %{y:.3f}<extra></extra>",
+  }], {
+    ...baseLayout, showlegend: true, margin: { l: 52, r: 18, t: 26, b: 58 },
+    xaxis: { ...baseLayout.xaxis, title: "Период", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "Значение target" },
+  }, plotConfig);
+
+  const target = state.evaluation.targets.find(item => item.id === "pipeline_target");
+  const validation = target.predictions.validation;
+  Plotly.react("notebookValidationPlot", [
+    { x: validation.map(row => row.period), y: validation.map(row => row.actual), name: "Факт (target, норм.)", type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 2 } },
+    { x: validation.map(row => row.period), y: validation.map(row => row.anfis), name: "Прогноз ANFIS", type: "scatter", mode: "lines+markers", line: { color: colors.teal, width: 2, dash: "dash" } },
+  ], {
+    ...baseLayout, margin: { l: 52, r: 18, t: 26, b: 54 },
+    xaxis: { ...baseLayout.xaxis, title: "Validation 2019–2022", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
+  }, plotConfig);
+
+  const test = target.predictions.test;
+  const modelStyles = {
+    seasonal_naive: { color: colors.muted, dash: "dot" },
+    ridge: { color: colors.blue, dash: "dash" },
+    anfis: { color: colors.teal, dash: "solid" },
+  };
+  const testTraces = [{
+    x: test.map(row => row.period), y: test.map(row => row.actual), name: "Target (норм.)",
+    type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 3 },
+  }];
+  Object.entries(state.evaluation.model_labels).forEach(([model, label]) => testTraces.push({
+    x: test.map(row => row.period), y: test.map(row => row[model]), name: label,
+    type: "scatter", mode: "lines+markers", line: { ...modelStyles[model], width: 2 },
+  }));
+  Plotly.react("notebookTestPlot", testTraces, {
+    ...baseLayout, margin: { l: 52, r: 18, t: 26, b: 54 },
+    xaxis: { ...baseLayout.xaxis, title: "Test 2023–2025", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
+  }, plotConfig);
+}
+
 function renderAnfisCards() {
   const labels = Object.fromEntries(state.metadata.targets.map(target => [target.id, target.label]));
   document.getElementById("anfisCards").innerHTML = state.metadata.anfis.map(model => `
@@ -551,7 +635,7 @@ async function renderFcm() {
   });
 }
 
-function scenarioReference(scenario) { return scenario.database_id || scenario.id; }
+function scenarioReference(scenario) { return scenario.id; }
 function scenarioByReference(reference) { return state.scenarios.find(item => scenarioReference(item) === reference); }
 
 function fillScenarioSelect(select) {
@@ -559,8 +643,7 @@ function fillScenarioSelect(select) {
   state.scenarios.forEach(item => {
     const option = document.createElement("option");
     option.value = scenarioReference(item);
-    const owner = item.owner ? ` · ${item.owner.display_name}` : "";
-    option.textContent = `${item.builtin ? "" : "★ "}${item.label}${owner}`;
+    option.textContent = `${item.builtin ? "" : "★ "}${item.label}`;
     select.appendChild(option);
   });
 }
@@ -568,6 +651,7 @@ function fillScenarioSelect(select) {
 function renderScenarioControls(selectedReference = null) {
   const select = document.getElementById("scenarioPreset");
   fillScenarioSelect(select);
+  if (!selectedReference && state.scenarios.some(item => item.id === "inertial")) select.value = "inertial";
   if (selectedReference && state.scenarios.some(item => scenarioReference(item) === selectedReference)) select.value = selectedReference;
   const adjustable = state.metadata.nodes.filter(node => node.adjustable);
   const primaryIds = new Set(["road_budget_execution", "transit_budget_execution", "safety_budget_execution", "road_repair", "crossings"]);
@@ -585,11 +669,6 @@ function applySelectedScenario() {
   const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
   if (!scenario) return;
   document.getElementById("scenarioDescription").textContent = scenario.description;
-  document.getElementById("scenarioOwner").textContent = scenario.builtin
-    ? "Общий встроенный сценарий"
-    : scenario.owner
-      ? `Владелец: ${scenario.owner.display_name} (@${scenario.owner.username})`
-      : "Ваш личный сценарий";
   document.getElementById("scenarioMode").value = scenario.mode;
   const horizon = document.getElementById("scenarioHorizon");
   if (![...horizon.options].some(option => Number(option.value) === Number(scenario.horizon))) {
@@ -601,15 +680,6 @@ function applySelectedScenario() {
     input.value = state.baseImpulses[input.dataset.node] || 0;
     input.dispatchEvent(new Event("input"));
   });
-  const canWrite = ["user", "admin"].includes(state.user.role);
-  document.getElementById("saveScenario").textContent = scenario.builtin ? "Сохранить копию" : "Сохранить изменения";
-  document.getElementById("deleteScenario").hidden = !canWrite || scenario.builtin;
-  const sharing = document.getElementById("scenarioSharing");
-  sharing.hidden = !canWrite || scenario.builtin;
-  if (!sharing.hidden) {
-    document.getElementById("observerShareList").innerHTML = '<span class="quiet-note">Загрузка наблюдателей…</span>';
-    loadScenarioSharing(scenario).catch(error => showToast(error.message, true));
-  }
 }
 
 function resetSliders() { applySelectedScenario(); }
@@ -635,68 +705,6 @@ function scenarioPayloadFromControls(scenario, overrides = {}) {
   };
 }
 
-async function saveCurrentScenario() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || !["user", "admin"].includes(state.user.role)) return;
-
-  try {
-    let saved;
-    if (scenario.builtin) {
-      const id = window.prompt("Идентификатор нового сценария (латиница, цифры, '-' или '_'):", `my-${scenario.id}`);
-      if (id == null) return;
-      const label = window.prompt("Название сценария:", `${scenario.label} — пользовательский`);
-      if (label == null) return;
-      const description = window.prompt("Описание сценария:", scenario.description || "Пользовательская копия встроенного сценария");
-      if (description == null) return;
-      const payload = scenarioPayloadFromControls(scenario, {
-        id: id.trim().toLowerCase(),
-        label: label.trim(),
-        description: description.trim(),
-      });
-      saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
-    } else {
-      const payload = scenarioPayloadFromControls(scenario);
-      saved = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-    }
-
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
-    renderScenarioControls(scenarioReference(saved));
-    showToast(`Сценарий «${saved.label}» сохранён в базе данных`);
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function loadScenarioSharing(scenario) {
-  const reference = scenarioReference(scenario);
-  const sharing = await api(`/api/scenarios/${encodeURIComponent(reference)}/shares`);
-  if (document.getElementById("scenarioPreset").value !== reference) return;
-  document.getElementById("observerShareList").innerHTML = sharing.observers.length
-    ? sharing.observers.map(observer => `<label class="observer-share-item">
-        <input type="checkbox" value="${escapeHtml(observer.id)}" ${observer.selected ? "checked" : ""}>
-        <span>${escapeHtml(observer.display_name)}<small>@${escapeHtml(observer.username)}</small></span>
-      </label>`).join("")
-    : '<span class="quiet-note">Активных наблюдателей пока нет.</span>';
-}
-
-async function saveScenarioSharing() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || scenario.builtin) return;
-  const observerIds = [...document.querySelectorAll("#observerShareList input:checked")]
-    .map(input => input.value);
-  try {
-    await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}/shares`, {
-      method: "PUT",
-      body: JSON.stringify({ observer_ids: observerIds }),
-    });
-    showToast(observerIds.length
-      ? `Доступ сохранён для наблюдателей: ${observerIds.length}`
-      : "Доступ наблюдателей закрыт");
-  } catch (error) { showToast(error.message, true); }
-}
-
 async function uploadScenario() {
   const input = document.getElementById("scenarioFile");
   const file = input.files[0];
@@ -704,32 +712,13 @@ async function uploadScenario() {
   if (file.size > 65536) { showToast("JSON-файл превышает 64 КБ", true); return; }
   try {
     const payload = JSON.parse(await file.text());
-    let saved;
-    try {
-      saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
-    } catch (error) {
-      const existing = state.scenarios.find(item => !item.builtin && item.id === String(payload.id || "").toLowerCase());
-      if (error.status !== 409 || !existing || !window.confirm(`Сценарий «${existing.label}» уже существует. Обновить его?`)) throw error;
-      saved = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(existing))}`, { method: "PUT", body: JSON.stringify(payload) });
-    }
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
+    const saved = await api("/api/scenarios/validate", { method: "POST", body: JSON.stringify(payload) });
+    const existingIndex = state.scenarios.findIndex(item => !item.builtin && item.id === saved.id);
+    if (existingIndex >= 0) state.scenarios.splice(existingIndex, 1, saved);
+    else state.scenarios.push(saved);
     renderScenarioControls(scenarioReference(saved));
     input.value = "";
-    showToast(`Сценарий «${saved.label}» сохранён`);
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function deleteSelectedScenario() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || scenario.builtin) return;
-  if (!window.confirm(`Удалить сценарий «${scenario.label}»?`)) return;
-  try {
-    await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}`, { method: "DELETE" });
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
-    renderScenarioControls();
-    showToast("Сценарий удалён");
+    showToast(`Сценарий «${saved.label}» загружен из JSON`);
   } catch (error) { showToast(error.message, true); }
 }
 
@@ -737,7 +726,7 @@ async function exportSelectedScenario() {
   const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
   if (!scenario) return;
   try {
-    const payload = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}/export`);
+    const payload = scenarioPayloadFromControls(scenario);
     const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `${payload.id}.json`; link.click();
@@ -791,21 +780,57 @@ function renderBusinessSummary(result) {
 function renderImprovementRecommendations() {
   const data = state.improvementRecommendations;
   if (!data) return;
-  const select = document.getElementById("recommendationObjective");
-  const previous = select.value || "traffic_safety";
-  fillSelect(select, data.objectives);
-  select.value = data.objectives.some(item => item.id === previous) ? previous : data.objectives[0].id;
-  const objective = data.objectives.find(item => item.id === select.value);
-  document.getElementById("recommendationStatus").innerHTML = `<strong>${escapeHtml(objective.label)}: ${formatNumber(objective.current, 2)} из 100</strong>
-    <span>${escapeHtml(objective.status)} · данные за ${escapeHtml(data.period)}</span>`;
+  const objectiveId = document.getElementById("customerObjective").value;
+  const objective = data.objectives.find(item => item.id === objectiveId) || data.objectives[0];
+  const indicator = objective.indicator;
+  const status = document.getElementById("recommendationStatus");
+  status.className = `recommendation-status ${indicator?.tone || "neutral"}`;
+  const change = indicator?.change_percent == null ? "без сравнения" : `${signed(indicator.change_percent)}% к прошлому кварталу`;
+  status.innerHTML = indicator
+    ? `<strong>${escapeHtml(indicator.label)}: ${formatNumber(indicator.value, 2)} ${escapeHtml(indicator.unit)}</strong>
+       <span>${escapeHtml(indicator.trend)} · ${escapeHtml(change)} · индекс ${formatNumber(objective.current, 1)}/100 · ${escapeHtml(data.period)}</span>`
+    : `<strong>${escapeHtml(objective.label)}: ${formatNumber(objective.current, 2)} из 100</strong><span>${escapeHtml(objective.status)}</span>`;
   document.getElementById("recommendationList").innerHTML = objective.items.map(item => {
     const effect = item.expected_effect_points == null
       ? "Прямой показатель канонических JSON-правил"
       : `Модельный ориентир: ${signed(item.expected_effect_points, 3)} п.п. при стандартном воздействии`;
     return `<li><span class="recommendation-rank">${item.rank}</span><div><strong>${escapeHtml(item.label)}</strong>
-      <p>${escapeHtml(item.action)}</p><small>${escapeHtml(item.relation)} · ${escapeHtml(effect)}</small></div></li>`;
+      <p>${escapeHtml(item.action)}</p><small>${escapeHtml(item.relation)} · ${escapeHtml(effect)}</small></div>
+      <button class="mini-button recommendation-action" type="button" data-factor="${escapeHtml(item.factor)}">Проверить меру</button></li>`;
   }).join("");
   document.getElementById("recommendationMethodology").textContent = data.methodology_note;
+}
+
+function applyRecommendedMeasure(factor) {
+  const input = document.querySelector(`#scenarioSliders input[data-node="${factor}"]`);
+  if (!input) { showToast("Для этой меры нужен прямой ввод данных в разделе квартала", true); return; }
+  input.value = Math.min(1, Number(input.value) + 0.10).toFixed(2);
+  input.dispatchEvent(new Event("input"));
+  showToast("Мера добавлена в сценарий с умеренным воздействием +0,10");
+  runScenario();
+}
+
+function syncCustomerObjective() {
+  const objective = document.getElementById("customerObjective").value;
+  const messages = {
+    traffic_safety: "Система оценивает динамику ДТП и ранжирует меры, которые сильнее всего повышают безопасность.",
+    transport_regularity: "Система ищет меры для соблюдения расписания и устойчивых интервалов движения.",
+    transport_accessibility: "Система показывает, какие связанные показатели сильнее всего улучшают доступность.",
+    integrated_mobility: "Система балансирует безопасность, регулярность и доступность без перекоса в одну метрику.",
+  };
+  document.getElementById("problemFocusHint").textContent = messages[objective];
+  if (state.improvementRecommendations) renderImprovementRecommendations();
+  if (state.budgetAnalysis) renderBudgetAnalysis();
+  const sensitivity = document.getElementById("sensitivityTarget");
+  if ([...sensitivity.options].some(option => option.value === objective)) {
+    sensitivity.value = objective;
+    if (state.evaluation) renderSensitivity();
+  }
+}
+
+async function recalculateForCustomerObjective() {
+  syncCustomerObjective();
+  await runScenario();
 }
 
 function budgetMetricCell(metric) {
@@ -814,7 +839,13 @@ function budgetMetricCell(metric) {
 
 function renderBudgetAnalysis() {
   if (!state.budgetAnalysis) return;
-  const objective = document.getElementById("budgetObjective").value;
+  const objectiveMap = {
+    traffic_safety: "safety",
+    transport_regularity: "regularity",
+    transport_accessibility: "accessibility",
+    integrated_mobility: "integrated_mobility",
+  };
+  const objective = objectiveMap[document.getElementById("customerObjective").value];
   const programs = [...state.budgetAnalysis.programs].sort((a, b) =>
     (b.metrics[objective].relative_change_percent ?? -Infinity) - (a.metrics[objective].relative_change_percent ?? -Infinity));
   const names = { safety: "безопасности", regularity: "регулярности", accessibility: "доступности", integrated_mobility: "сбалансированного индекса" };
@@ -835,25 +866,25 @@ function renderBudgetAnalysis() {
 async function runScenario() {
   const button = document.getElementById("runScenario");
   button.disabled = true; button.textContent = "Расчёт…";
+  const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
   const impulses = {};
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  if (selected?.builtin) document.querySelectorAll("#scenarioSliders input").forEach(input => {
     const delta = Number(input.value) - Number(state.baseImpulses[input.dataset.node] || 0);
     if (Math.abs(delta) > .0001) impulses[input.dataset.node] = delta;
   });
   try {
     const result = await api("/api/simulate", { method: "POST", body: JSON.stringify({
       scenario: document.getElementById("scenarioPreset").value,
+      scenario_payload: selected?.builtin ? null : scenarioPayloadFromControls(selected),
       mode: document.getElementById("scenarioMode").value,
       horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
     }) });
-    if (state.user.role !== "observer") {
-      await Promise.all([
-        plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
-        plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
-        plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы"),
-        plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
-      ]);
-    }
+    await Promise.all([
+      plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
+      plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
+      plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы"),
+      plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
+    ]);
     renderBusinessSummary(result);
     state.budgetAnalysis = result.budget_analysis;
     state.improvementRecommendations = result.improvement_recommendations;
@@ -865,7 +896,7 @@ async function runScenario() {
       ? result.applied_impulses.map(item => `<span class="tag">${item.label}: ${item.value > 0 ? "+" : ""}${item.value.toFixed(2)}</span>`).join("")
       : '<span class="tag">Без внешних импульсов</span>';
   } catch (error) { showToast(error.message, true); }
-  finally { button.disabled = false; button.textContent = state.user.role === "observer" ? "Показать результат" : "Запустить прогноз"; }
+  finally { button.disabled = false; button.textContent = "Запустить прогноз"; }
 }
 
 function renderSensitivity() {
@@ -895,142 +926,6 @@ function renderSensitivity() {
   }, plotConfig);
 }
 
-function showLogin(message = "") {
-  document.getElementById("appShell").hidden = true;
-  document.getElementById("loginView").hidden = false;
-  document.getElementById("loginError").textContent = message;
-  document.getElementById("loginPassword").value = "";
-  document.getElementById("loginUsername").focus();
-}
-
-function showApplication() {
-  document.getElementById("loginView").hidden = true;
-  document.getElementById("appShell").hidden = false;
-}
-
-function applyUserInterface() {
-  const labels = { observer: "Наблюдатель", user: "Пользователь", admin: "Администратор" };
-  const isObserver = state.user.role === "observer";
-  const appShell = document.getElementById("appShell");
-  appShell.classList.toggle("observer-mode", isObserver);
-  document.getElementById("currentUserName").textContent = state.user.display_name;
-  document.getElementById("currentUserRole").textContent = labels[state.user.role] || state.user.role;
-  const canWrite = ["user", "admin"].includes(state.user.role);
-  document.querySelectorAll(".role-editor").forEach(element => { element.hidden = !canWrite; });
-  document.getElementById("adminPanel").hidden = state.user.role !== "admin";
-  document.getElementById("heroEyebrow").textContent = isObserver ? "Режим наблюдателя" : "Аналитический прототип · 2006–2025";
-  document.getElementById("heroTitle").innerHTML = isObserver
-    ? "Доступные транспортные<br><em>сценарии и результаты</em>"
-    : "Транспортная доступность<br><em>и безопасность города</em>";
-  document.getElementById("heroCopy").textContent = isObserver
-    ? "Вам доступны все 9 разделов: выберите проблемную цель, изучите пять предложенных мер и посмотрите ожидаемый эффект. Настройки данных и сценариев доступны только для просмотра."
-    : state.user.role === "admin"
-      ? "Вы управляете всей демонстрацией: данными, сценариями, рекомендациями и доступом пользователей. Начните с цели заказчика, затем проверьте пять мер прогнозом."
-      : "Начните с проблемной цели заказчика: система предложит пять понятных мер, покажет эффект в процентах и поможет сохранить сценарий. При необходимости выберите или дополните XLSX.";
-  document.getElementById("heroPrimaryAction").textContent = isObserver ? "Открыть доступные сценарии" : "Запустить сценарий";
-  document.getElementById("scenarioControlKicker").textContent = isObserver ? "Доступные материалы" : "Настройки";
-  document.getElementById("scenarioControlTitle").textContent = isObserver ? "Выберите сценарий" : "Управляющие воздействия";
-  document.getElementById("runScenario").textContent = isObserver ? "Показать результат" : "Запустить прогноз";
-  sectionGuide.forEach(item => {
-    const section = document.getElementById(item.id);
-    section.hidden = false;
-    section.removeAttribute("aria-hidden");
-    section.querySelector(":scope > .section-heading .section-index").textContent = item.index;
-    setAccordionExpanded(section, isObserver && item.id === "scenarios");
-  });
-  if (state.user.must_change_password) showToast("Администратор потребовал сменить временный пароль", true);
-}
-
-async function login(event) {
-  event.preventDefault();
-  const button = document.getElementById("loginButton");
-  button.disabled = true; button.textContent = "Вход…";
-  document.getElementById("loginError").textContent = "";
-  try {
-    const result = await api("/api/auth/login", { method: "POST", body: JSON.stringify({
-      username: document.getElementById("loginUsername").value,
-      password: document.getElementById("loginPassword").value,
-    }) });
-    state.user = result.user; state.csrfToken = result.csrf_token;
-    showApplication(); applyUserInterface();
-    await initializeApplication();
-  } catch (error) {
-    document.getElementById("loginError").textContent = error.message;
-  } finally {
-    button.disabled = false; button.textContent = "Войти";
-  }
-}
-
-async function logout() {
-  try { await api("/api/auth/logout", { method: "POST" }); } catch (_) { /* session may already be gone */ }
-  state.user = null; state.csrfToken = null; state.budgetAnalysis = null;
-  showLogin("Вы вышли из системы");
-}
-
-async function changePassword() {
-  const currentPassword = window.prompt("Текущий пароль:");
-  if (currentPassword == null) return;
-  const newPassword = window.prompt("Новый пароль (не менее 10 символов):");
-  if (newPassword == null) return;
-  try {
-    await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
-    state.user.must_change_password = false;
-    showToast("Пароль изменён; другие сессии завершены");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function loadAdminPanel() {
-  if (state.user.role !== "admin") return;
-  const [usersResult, auditResult] = await Promise.all([api("/api/admin/users"), api("/api/admin/audit?limit=50")]);
-  document.getElementById("usersBody").innerHTML = usersResult.users.map(user => `<tr data-user-id="${user.id}">
-    <td><strong>${escapeHtml(user.display_name)}</strong><small class="table-subline">${escapeHtml(user.username)}</small></td>
-    <td><select class="admin-role"><option value="observer" ${user.role === "observer" ? "selected" : ""}>Наблюдатель</option><option value="user" ${user.role === "user" ? "selected" : ""}>Пользователь</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>Администратор</option></select></td>
-    <td><input class="admin-active" type="checkbox" ${user.is_active ? "checked" : ""} aria-label="Активен"></td>
-    <td><div class="table-actions"><button class="mini-button save-user" type="button">Сохранить</button><button class="mini-button reset-user" type="button">Пароль</button></div></td>
-  </tr>`).join("");
-  document.querySelectorAll(".save-user").forEach(button => button.addEventListener("click", () => updateAdminUser(button.closest("tr"))));
-  document.querySelectorAll(".reset-user").forEach(button => button.addEventListener("click", () => resetAdminPassword(button.closest("tr"))));
-  document.getElementById("auditList").innerHTML = auditResult.events.length ? auditResult.events.map(event => `<div class="audit-row">
-    <time>${new Date(`${event.created_at}Z`).toLocaleString("ru-RU")}</time><strong>${escapeHtml(event.action)}</strong><span>${escapeHtml(event.user?.username || "system")}</span>
-  </div>`).join("") : '<p class="quiet-note">Событий пока нет.</p>';
-}
-
-async function createAdminUser(event) {
-  event.preventDefault();
-  try {
-    await api("/api/admin/users", { method: "POST", body: JSON.stringify({
-      username: document.getElementById("newUsername").value,
-      display_name: document.getElementById("newDisplayName").value,
-      password: document.getElementById("newPassword").value,
-      role: document.getElementById("newRole").value,
-      must_change_password: true,
-    }) });
-    event.target.reset();
-    await loadAdminPanel();
-    showToast("Пользователь создан");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function updateAdminUser(row) {
-  try {
-    await api(`/api/admin/users/${row.dataset.userId}`, { method: "PATCH", body: JSON.stringify({
-      role: row.querySelector(".admin-role").value,
-      is_active: row.querySelector(".admin-active").checked,
-    }) });
-    await loadAdminPanel(); showToast("Права пользователя обновлены");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function resetAdminPassword(row) {
-  const password = window.prompt("Новый временный пароль (не менее 10 символов):");
-  if (password == null) return;
-  try {
-    await api(`/api/admin/users/${row.dataset.userId}/reset-password`, { method: "POST", body: JSON.stringify({ password, must_change_password: true }) });
-    showToast("Пароль сброшен, активные сессии завершены");
-    await loadAdminPanel();
-  } catch (error) { showToast(error.message, true); }
-}
-
 function bindEvents() {
   if (state.eventsBound) return;
   state.eventsBound = true;
@@ -1041,54 +936,50 @@ function bindEvents() {
   document.getElementById("fcmMode").addEventListener("change", () => renderFcm().catch(error => showToast(error.message, true)));
   document.getElementById("scenarioPreset").addEventListener("change", applySelectedScenario);
   document.getElementById("resetSliders").addEventListener("click", resetSliders);
-  document.getElementById("saveScenario").addEventListener("click", saveCurrentScenario);
-  document.getElementById("saveScenarioShares").addEventListener("click", saveScenarioSharing);
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
-  document.getElementById("deleteScenario").addEventListener("click", deleteSelectedScenario);
   document.getElementById("exportScenario").addEventListener("click", exportSelectedScenario);
   document.getElementById("runScenario").addEventListener("click", runScenario);
+  document.getElementById("customerObjective").addEventListener("change", () => {
+    recalculateForCustomerObjective().catch(error => showToast(error.message, true));
+  });
+  document.getElementById("recommendationList").addEventListener("click", event => {
+    const button = event.target.closest(".recommendation-action");
+    if (button) applyRecommendedMeasure(button.dataset.factor);
+  });
   document.getElementById("sensitivityTarget").addEventListener("change", renderSensitivity);
-  document.getElementById("budgetObjective").addEventListener("change", renderBudgetAnalysis);
   document.getElementById("boxplotGroup").addEventListener("change", renderBoxplots);
   document.getElementById("membershipIndex").addEventListener("change", renderMembershipVariableOptions);
   document.getElementById("membershipVariable").addEventListener("change", renderMembershipPlot);
-  document.getElementById("recommendationObjective").addEventListener("change", renderImprovementRecommendations);
   document.getElementById("datasetSelect").addEventListener("change", event => loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true)));
   document.getElementById("datasetRowSelect").addEventListener("change", event => populateDatasetRow(event.target.value));
   document.getElementById("activateDataset").addEventListener("click", activateDataset);
   document.getElementById("newDatasetRow").addEventListener("click", () => {
     document.getElementById("datasetRowSelect").value = "__new__";
     populateDatasetRow("__new__");
+    document.querySelector(".dataset-field-details").open = true;
   });
   document.getElementById("saveDatasetRow").addEventListener("click", saveDatasetRow);
-  document.getElementById("logoutButton").addEventListener("click", logout);
-  document.getElementById("changePassword").addEventListener("click", changePassword);
-  document.getElementById("createUserForm").addEventListener("submit", createAdminUser);
+  document.getElementById("retrainModels").addEventListener("click", retrainModels);
 }
 
 async function initializeApplication() {
   const status = document.getElementById("apiStatus");
   try {
-    const isObserver = state.user.role === "observer";
-    const [health, metadata, history, indices, evaluation, analysis, scenarios, datasets] = await Promise.all([
-      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"),
+    const [health, metadata, history, indices, evaluation, analysis, scenarios, datasets, modelStatus] = await Promise.all([
+      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"), api("/api/models/status"),
     ]);
-    Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, scenarios: scenarios.scenarios });
-    status.className = "status-pill ready"; status.innerHTML = isObserver
-      ? "<span></span>Доступны 9 разделов"
-      : `<span></span>Готово · ${health.periods} кварталов`;
+    Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, modelStatus, scenarios: scenarios.scenarios });
+    status.className = "status-pill ready"; status.innerHTML = `<span></span>Готово · ${health.periods} кварталов`;
     renderOverview();
     renderScenarioControls(); bindEvents();
-    fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "integrated_mobility";
+    fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "pipeline_target";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
-    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderDatasetCatalog();
+    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective();
     await loadDatasetDetail(state.datasets.active);
     await renderFcm();
     await runScenario();
-    await loadAdminPanel();
   } catch (error) {
-    if (error.status === 401) { showLogin("Сессия истекла. Войдите снова."); return; }
     status.className = "status-pill error"; status.innerHTML = "<span></span>Ошибка запуска";
     showToast(`Не удалось запустить интерфейс: ${error.message}`, true); console.error(error);
   }
@@ -1096,15 +987,7 @@ async function initializeApplication() {
 
 async function bootstrap() {
   initializePageStructure();
-  document.getElementById("loginForm").addEventListener("submit", login);
-  try {
-    const result = await api("/api/auth/me");
-    state.user = result.user; state.csrfToken = result.csrf_token;
-    showApplication(); applyUserInterface();
-    await initializeApplication();
-  } catch (error) {
-    showLogin(error.status === 401 ? "" : `Не удалось проверить сессию: ${error.message}`);
-  }
+  await initializeApplication();
 }
 
 window.addEventListener("DOMContentLoaded", bootstrap);

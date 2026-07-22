@@ -22,9 +22,9 @@ class ScenarioValueValidationTests(unittest.TestCase):
 
     def test_existing_impulse_can_move_between_full_bounds(self) -> None:
         service = ProblemBService()
-        result = service.simulate("improve_safety_budget_execution", custom_impulses={"safety_budget_execution": -2.0})
+        result = service.simulate("relation_road_repair", custom_impulses={"road_repair": -2.0})
         applied = {item["node"]: item["value"] for item in result["applied_impulses"]}
-        self.assertEqual(applied["safety_budget_execution"], -1.0)
+        self.assertEqual(applied["road_repair"], -1.0)
 
     def test_saved_scenario_accepts_full_impulse_bounds(self) -> None:
         payload = {
