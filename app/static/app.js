@@ -796,6 +796,7 @@ async function uploadScenario() {
     renderScenarioControls(scenarioReference(saved));
     input.value = "";
     showToast(`Сценарий «${saved.label}» загружен из JSON`);
+    await runScenario();
   } catch (error) { showToast(error.message, true); }
 }
 
@@ -1012,7 +1013,12 @@ function bindEvents() {
   document.getElementById("evaluationTarget").addEventListener("change", renderEvaluation);
   document.getElementById("evaluationSplit").addEventListener("change", renderEvaluation);
   document.getElementById("fcmMode").addEventListener("change", () => renderFcm().catch(error => showToast(error.message, true)));
-  document.getElementById("scenarioPreset").addEventListener("change", applySelectedScenario);
+  document.getElementById("scenarioPreset").addEventListener("change", async () => {
+    applySelectedScenario();
+    await runScenario();
+  });
+  document.getElementById("scenarioMode").addEventListener("change", () => runScenario());
+  document.getElementById("scenarioHorizon").addEventListener("change", () => runScenario());
   document.getElementById("resetSliders").addEventListener("click", resetSliders);
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
   document.getElementById("saveScenario").addEventListener("click", saveScenario);
