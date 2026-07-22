@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Локальный нейросимулятор транспортной доступности и безопасности Смоленска">
   <title>Нейросимулятор Смоленска · Проблема Б</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260722-accordion-all">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260722-observer-method-card">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260722-accordion-all"></script>
+  <script defer src="/assets/app.js?v=20260722-observer-seven-sections"></script>
 </head>
 <body>
   <section id="loginView" class="auth-view" hidden>
@@ -55,12 +55,12 @@
 
     <div class="hero-grid">
       <div>
-        <div class="eyebrow">Аналитический прототип · 2006–2025</div>
-        <h1>Транспортная доступность<br><em>и безопасность города</em></h1>
-        <p class="hero-copy">Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.</p>
+        <div id="heroEyebrow" class="eyebrow">Аналитический прототип · 2006–2025</div>
+        <h1 id="heroTitle">Транспортная доступность<br><em>и безопасность города</em></h1>
+        <p id="heroCopy" class="hero-copy">Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.</p>
         <div class="hero-actions">
-          <a class="primary-button" href="#scenarios">Запустить сценарий</a>
-          <a class="text-button" href="#map">Открыть карту связей <span>→</span></a>
+          <a id="heroPrimaryAction" class="primary-button" href="#scenarios">Запустить сценарий</a>
+          <a class="text-button observer-hidden" href="#map">Открыть карту связей <span>→</span></a>
         </div>
       </div>
       <aside class="method-card">
@@ -82,7 +82,7 @@
         <p id="latestPeriod">Загрузка данных…</p>
       </div>
       <div id="kpiGrid" class="kpi-grid"></div>
-      <div class="source-grid">
+      <div class="source-grid observer-detail">
         <article class="panel source-panel">
           <span class="panel-kicker">Источник</span>
           <h3>Новый сводный датасет</h3>
@@ -109,11 +109,12 @@
         </div>
         <div id="historyPlot" class="plot plot-large" aria-label="График исторической динамики"></div>
       </div>
-      <div class="panel chart-panel compact-chart">
+      <div class="panel chart-panel compact-chart quarter-profile">
         <div class="panel-toolbar">
           <div><span class="panel-kicker">Квартальный профиль</span><h3>Среднее значение по кварталам</h3></div>
-          <span class="quiet-note">Все 80 наблюдений</span>
+          <span class="quiet-note">Среднее за 2006–2025 годы</span>
         </div>
+        <p id="seasonSummary" class="quarter-summary">Сравнение четырёх кварталов</p>
         <div id="seasonPlot" class="plot" aria-label="График сезонности"></div>
       </div>
     </section>
@@ -200,7 +201,7 @@
       </div>
       <div class="scenario-layout">
         <aside class="panel scenario-controls">
-          <div><span class="panel-kicker">Настройки</span><h3>Управляющие воздействия</h3></div>
+          <div><span id="scenarioControlKicker" class="panel-kicker">Настройки</span><h3 id="scenarioControlTitle">Управляющие воздействия</h3></div>
           <label>Готовый сценарий<select id="scenarioPreset"></select></label>
           <p id="scenarioDescription" class="control-description"></p>
           <p id="scenarioOwner" class="scenario-owner"></p>
@@ -218,12 +219,12 @@
             <div id="observerShareList" class="observer-share-list"></div>
             <button id="saveScenarioShares" class="mini-button" type="button">Сохранить доступ</button>
           </section>
-          <div class="control-row">
+          <div class="control-row observer-editor-only">
             <label>Модель<select id="scenarioMode"><option value="adapted">FCM + ANFIS</option><option value="expert">Экспертная FCM</option></select></label>
             <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
           </div>
-          <div class="slider-heading"><span>Дополнительные импульсы</span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
-          <div id="scenarioSliders" class="slider-list"></div>
+          <div class="slider-heading observer-editor-only"><span>Дополнительные импульсы</span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
+          <div id="scenarioSliders" class="slider-list observer-editor-only"></div>
           <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
         <div class="scenario-results">
@@ -244,7 +245,7 @@
             </div>
             <p id="budgetMethodology" class="methodology-note">Рейтинг использует одинаковое модельное воздействие и не является финансовым ROI.</p>
           </article>
-          <div class="scenario-chart-grid">
+          <div class="scenario-chart-grid observer-detail">
             <article class="panel mini-chart-panel"><span class="panel-kicker">Безопасность</span><div id="safetyPlot" class="plot"></div></article>
             <article class="panel mini-chart-panel"><span class="panel-kicker">Регулярность</span><div id="regularityPlot" class="plot"></div></article>
             <article class="panel mini-chart-panel"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
@@ -304,7 +305,7 @@
 
   <footer class="shell footer">
     <span>Локальный прототип · проблема Б</span>
-    <span>Нормализация обучена только на train · <a href="/docs" target="_blank" rel="noreferrer">API</a></span>
+    <span class="observer-hidden">Нормализация обучена только на train · <a href="/docs" target="_blank" rel="noreferrer">API</a></span>
   </footer>
   </div>
 

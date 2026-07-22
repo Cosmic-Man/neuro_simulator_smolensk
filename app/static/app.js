@@ -209,10 +209,35 @@ function renderHistory() {
   }], { ...baseLayout, shapes, yaxis: { ...baseLayout.yaxis, title: selected.unit } }, plotConfig);
   const buckets = [[], [], [], []];
   selected.values.forEach((value, index) => buckets[Number(state.history.periods[index].slice(-1)) - 1].push(value));
+  const quarterLabels = ["I", "II", "III", "IV"];
+  const quarterAverages = buckets.map(values => values.reduce((a, b) => a + b, 0) / values.length);
+  const bestQuarter = quarterAverages.indexOf(Math.max(...quarterAverages));
+  const weakestQuarter = quarterAverages.indexOf(Math.min(...quarterAverages));
+  const quarterMean = quarterAverages.reduce((sum, value) => sum + value, 0) / quarterAverages.length;
+  const quarterSpread = Math.max(...quarterAverages) - Math.min(...quarterAverages);
+  const quarterPadding = Math.max(quarterSpread * .65, Math.abs(quarterMean) * .025, .5);
+  document.getElementById("seasonSummary").textContent = bestQuarter === weakestQuarter
+    ? "Средние значения по кварталам практически совпадают"
+    : `Максимум: ${quarterLabels[bestQuarter]} квартал — ${formatNumber(quarterAverages[bestQuarter], 1)}; минимум: ${quarterLabels[weakestQuarter]} квартал — ${formatNumber(quarterAverages[weakestQuarter], 1)}`;
   Plotly.react("seasonPlot", [{
-    x: ["I", "II", "III", "IV"], y: buckets.map(values => values.reduce((a, b) => a + b, 0) / values.length),
-    type: "bar", marker: { color: [colors.teal, colors.bright, colors.gold, colors.coral] }, hovertemplate: "%{x} квартал<br>%{y:.2f}<extra></extra>",
-  }], { ...baseLayout, showlegend: false, margin: { l: 52, r: 18, t: 12, b: 42 } }, plotConfig);
+    x: quarterLabels, y: quarterAverages,
+    type: "scatter", mode: "lines+markers+text",
+    line: { color: colors.teal, width: 3 },
+    marker: {
+      size: quarterAverages.map((_, index) => index === bestQuarter || index === weakestQuarter ? 14 : 11),
+      color: quarterAverages.map((_, index) => index === bestQuarter ? colors.gold : index === weakestQuarter ? colors.coral : colors.teal),
+      line: { color: "#fff", width: 2 },
+    },
+    text: quarterAverages.map(value => formatNumber(value, 1)), textposition: "top center", textfont: { size: 11 }, cliponaxis: false,
+    hovertemplate: "%{x} квартал<br><b>%{y:.2f}</b><extra></extra>",
+  }], {
+    ...baseLayout, height: 165, showlegend: false,
+    margin: { l: 40, r: 10, t: 25, b: 27 },
+    shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: quarterMean, y1: quarterMean, line: { color: colors.muted, width: 1, dash: "dot" } }],
+    annotations: [{ xref: "paper", x: 1, y: quarterMean, text: `среднее ${formatNumber(quarterMean, 1)}`, showarrow: false, xanchor: "right", yshift: 9, font: { size: 9, color: colors.muted } }],
+    xaxis: { ...baseLayout.xaxis, title: "", showgrid: false },
+    yaxis: { ...baseLayout.yaxis, title: selected.unit, range: [Math.min(...quarterAverages) - quarterPadding, Math.max(...quarterAverages) + quarterPadding], nticks: 4 },
+  }, plotConfig);
 }
 
 function renderIndices() {
@@ -570,10 +595,12 @@ async function runScenario() {
       mode: document.getElementById("scenarioMode").value,
       horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
     }) });
-    plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents");
-    plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%");
-    plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы");
-    plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы");
+    if (state.user.role !== "observer") {
+      plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents");
+      plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%");
+      plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы");
+      plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы");
+    }
     renderBusinessSummary(result);
     state.budgetAnalysis = result.budget_analysis;
     renderBudgetAnalysis();
@@ -583,7 +610,7 @@ async function runScenario() {
       ? result.applied_impulses.map(item => `<span class="tag">${item.label}: ${item.value > 0 ? "+" : ""}${item.value.toFixed(2)}</span>`).join("")
       : '<span class="tag">Без внешних импульсов</span>';
   } catch (error) { showToast(error.message, true); }
-  finally { button.disabled = false; button.textContent = "Запустить прогноз"; }
+  finally { button.disabled = false; button.textContent = state.user.role === "observer" ? "Показать результат" : "Запустить прогноз"; }
 }
 
 function renderSensitivity() {
@@ -628,11 +655,32 @@ function showApplication() {
 
 function applyUserInterface() {
   const labels = { observer: "Наблюдатель", user: "Пользователь", admin: "Администратор" };
+  const isObserver = state.user.role === "observer";
+  const appShell = document.getElementById("appShell");
+  appShell.classList.toggle("observer-mode", isObserver);
   document.getElementById("currentUserName").textContent = state.user.display_name;
   document.getElementById("currentUserRole").textContent = labels[state.user.role] || state.user.role;
   const canWrite = ["user", "admin"].includes(state.user.role);
   document.querySelectorAll(".role-editor").forEach(element => { element.hidden = !canWrite; });
   document.getElementById("adminPanel").hidden = state.user.role !== "admin";
+  document.getElementById("heroEyebrow").textContent = isObserver ? "Режим наблюдателя" : "Аналитический прототип · 2006–2025";
+  document.getElementById("heroTitle").innerHTML = isObserver
+    ? "Доступные транспортные<br><em>сценарии и результаты</em>"
+    : "Транспортная доступность<br><em>и безопасность города</em>";
+  document.getElementById("heroCopy").textContent = isObserver
+    ? "Вам доступны все 7 разделов системы: лаборатория сценариев, чувствительность, текущее состояние, история, индексы, модели и карта связей. Данные открыты для просмотра без сложных настроек и редактирования."
+    : "Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.";
+  document.getElementById("heroPrimaryAction").textContent = isObserver ? "Открыть доступные сценарии" : "Запустить сценарий";
+  document.getElementById("scenarioControlKicker").textContent = isObserver ? "Доступные материалы" : "Настройки";
+  document.getElementById("scenarioControlTitle").textContent = isObserver ? "Выберите сценарий" : "Управляющие воздействия";
+  document.getElementById("runScenario").textContent = isObserver ? "Показать результат" : "Запустить прогноз";
+  sectionGuide.forEach(item => {
+    const section = document.getElementById(item.id);
+    section.hidden = false;
+    section.removeAttribute("aria-hidden");
+    section.querySelector(":scope > .section-heading .section-index").textContent = item.index;
+    setAccordionExpanded(section, isObserver && item.id === "scenarios");
+  });
   if (state.user.must_change_password) showToast("Администратор потребовал сменить временный пароль", true);
 }
 
@@ -752,17 +800,22 @@ function bindEvents() {
 async function initializeApplication() {
   const status = document.getElementById("apiStatus");
   try {
+    const isObserver = state.user.role === "observer";
     const [health, metadata, history, indices, evaluation, scenarios] = await Promise.all([
       api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/scenarios"),
     ]);
     Object.assign(state, { metadata, history, indices, evaluation, scenarios: scenarios.scenarios });
-    status.className = "status-pill ready"; status.innerHTML = `<span></span>Готово · ${health.periods} кварталов`;
+    status.className = "status-pill ready"; status.innerHTML = isObserver
+      ? "<span></span>Доступны 7 разделов"
+      : `<span></span>Готово · ${health.periods} кварталов`;
     renderOverview();
+    renderScenarioControls(); bindEvents();
     fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "integrated_mobility";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.targets);
-    renderHistory(); renderIndices(); renderEvaluation(); renderAnfisCards(); renderScenarioControls(); renderSensitivity(); bindEvents();
-    await renderFcm(); await runScenario();
+    renderHistory(); renderIndices(); renderEvaluation(); renderAnfisCards(); renderSensitivity();
+    await renderFcm();
+    await runScenario();
     await loadAdminPanel();
   } catch (error) {
     if (error.status === 401) { showLogin("Сессия истекла. Войдите снова."); return; }
