@@ -48,58 +48,67 @@ EXPERT_EDGES = (
 )
 
 
+ADJUSTABLE_SPECS = tuple(spec for spec in NODE_SPECS if spec.adjustable)
+IMPROVEMENT_SPECS = tuple(spec for spec in ADJUSTABLE_SPECS if spec.id != "congestion")
+REALLOCATION_FOCUS_IDS = (
+    "road_budget_execution",
+    "transit_budget_execution",
+    "safety_budget_execution",
+)
+REALLOCATION_REDUCTION = -1.0 / (len(ADJUSTABLE_SPECS) - 1)
+
+
+def _point_improvement_scenario(node_id: str, label: str) -> dict[str, object]:
+    return {
+        "version": 1,
+        "label": f"Точечный +1 · {label}",
+        "description": f"Только фактор «{label}» получает максимальный положительный импульс +1; остальные факторы не изменяются.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {node_id: 1.0},
+    }
+
+
+def _reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
+    impulses = {
+        spec.id: (1.0 if spec.id == focus_id else REALLOCATION_REDUCTION)
+        for spec in ADJUSTABLE_SPECS
+    }
+    return {
+        "version": 1,
+        "label": f"Перераспределение · {focus_label}",
+        "description": (
+            f"Фактор «{focus_label}» получает +1. От каждого из остальных управляемых факторов отнимается по 0,10: "
+            "суммарное снижение равно −1, поэтому общий баланс импульсов равен нулю."
+        ),
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": impulses,
+    }
+
+
+_LABEL_BY_ID = {spec.id: spec.label for spec in ADJUSTABLE_SPECS}
+
 BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
+    **{
+        f"improve_{spec.id}": _point_improvement_scenario(spec.id, spec.label)
+        for spec in IMPROVEMENT_SPECS
+    },
+    **{
+        f"reallocate_{focus_id}": _reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
+        for focus_id in REALLOCATION_FOCUS_IDS
+    },
     "inertial": {
         "version": 1,
-        "label": "Инерционный",
+        "label": "Инерционный · без импульсов",
         "description": "Продолжение текущей динамики без внешнего импульса.",
         "mode": "adapted",
         "horizon": 8,
         "impulses": {},
     },
-    "limited_resources": {
-        "version": 1,
-        "label": "Ограниченный бюджет",
-        "description": "Снижение исполнения дорожной, транспортной и безопасностной программ.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {"road_budget_execution": -0.16, "transit_budget_execution": -0.14, "safety_budget_execution": -0.12},
-    },
-    "road_deterioration": {
-        "version": 1,
-        "label": "Ухудшение дорог",
-        "description": "Снижение ремонта, нормативного состояния и эффективности устранения дефектов.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {"road_repair": -0.14, "road_condition": -0.18, "defect_response": -0.10},
-    },
-    "transit_priority": {
-        "version": 1,
-        "label": "Приоритет общественного транспорта",
-        "description": "Усиление транспортной программы, регулярности и пассажиропотока.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {"transit_budget_execution": 0.16, "transport_regularity": 0.10, "passenger_flow": 0.08},
-    },
-    "digital_mobility": {
-        "version": 1,
-        "label": "Цифровая мобильность",
-        "description": "Прокси цифровизации: повышение регулярности и скорости при снижении загруженности.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {"transport_regularity": 0.08, "average_speed": 0.08, "congestion": -0.08},
-    },
-    "safety": {
-        "version": 1,
-        "label": "Повышение безопасности",
-        "description": "Дополнительные ресурсы, переходы и более быстрое устранение дефектов.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {"safety_budget_execution": 0.15, "crossings": 0.16, "defect_response": 0.10},
-    },
     "custom": {
         "version": 1,
-        "label": "Пользовательский",
+        "label": "Пользовательский · ручная настройка",
         "description": "Собственный набор управляющих воздействий.",
         "mode": "adapted",
         "horizon": 8,

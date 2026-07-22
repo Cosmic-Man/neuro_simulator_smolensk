@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from .config import IMPULSE_LIMIT
 from .data import NODE_SPECS
 from .db_models import Scenario, ScenarioShare, User
 from .fcm import BUILTIN_SCENARIOS
@@ -55,8 +56,8 @@ def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
         if node not in ADJUSTABLE_NODES:
             raise ValueError(f"Узел {node} нельзя изменять в пользовательском сценарии")
         numeric = float(value)
-        if not -0.30 <= numeric <= 0.30:
-            raise ValueError(f"Воздействие на {node} должно быть в диапазоне [-0.30, 0.30]")
+        if not -IMPULSE_LIMIT <= numeric <= IMPULSE_LIMIT:
+            raise ValueError(f"Воздействие на {node} должно быть в диапазоне [-1, 1]")
         if abs(numeric) > 1e-12:
             impulses[node] = numeric
     return {

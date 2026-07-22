@@ -6,7 +6,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from .config import DEFAULT_HORIZON, TEST_END, TRAIN_END, VALIDATION_END
+from .config import DEFAULT_HORIZON, IMPULSE_LIMIT, TEST_END, TRAIN_END, VALIDATION_END
 from .data import DataBundle, NODE_IDS, NODE_SPECS, load_problem_b_data
 from .fcm import EXPERT_EDGES, WeightSet, build_weight_set, fcm_forecast, fcm_step, graph_payload, impulse_vector, next_period
 from .fuzzy import FUZZY_INDEX_SPECS
@@ -402,9 +402,10 @@ class ProblemBService:
             if key not in adjustable:
                 raise ValueError(f"Узел {key} нельзя изменять")
             numeric = float(value)
-            if not -0.30 <= numeric <= 0.30:
-                raise ValueError(f"Воздействие на {key} должно быть в диапазоне [-0.30, 0.30]")
-            impulses[key] = float(np.clip(impulses.get(key, 0.0) + numeric, -0.30, 0.30))
+            combined = impulses.get(key, 0.0) + numeric
+            if not -IMPULSE_LIMIT <= combined <= IMPULSE_LIMIT:
+                raise ValueError(f"Итоговое воздействие на {key} должно быть в диапазоне [-1, 1]")
+            impulses[key] = float(np.clip(combined, -IMPULSE_LIMIT, IMPULSE_LIMIT))
 
         initial = self.bundle.factors.iloc[-1].to_numpy(dtype=float)
         weights = self._weights_array(selected_mode)

@@ -81,7 +81,7 @@ class ApiTests(unittest.TestCase):
         with TestClient(app) as anonymous:
             self.assertEqual(anonymous.get("/api/health").status_code, 200)
             self.assertEqual(anonymous.get("/api/metadata").status_code, 401)
-            self.assertEqual(anonymous.post("/api/simulate", json={"scenario": "safety"}).status_code, 401)
+            self.assertEqual(anonymous.post("/api/simulate", json={"scenario": "improve_safety_budget_execution"}).status_code, 401)
 
         paths = ("/api/metadata", "/api/history", "/api/indices", "/api/fcm?mode=adapted", "/api/evaluation", "/api/scenarios")
         for path in paths:
@@ -93,7 +93,7 @@ class ApiTests(unittest.TestCase):
     def test_simulation_contains_business_percentages_and_budget_ranking(self) -> None:
         response = self.observer.post(
             "/api/simulate",
-            json={"scenario": "safety", "mode": "adapted", "horizon": 8, "impulses": {}},
+            json={"scenario": "improve_safety_budget_execution", "mode": "adapted", "horizon": 8, "impulses": {}},
         )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -160,7 +160,7 @@ class ApiTests(unittest.TestCase):
     def test_builtin_scenario_cannot_be_overwritten(self) -> None:
         response = self.admin.post(
             "/api/scenarios",
-            json={"version": 1, "id": "safety", "label": "Подмена", "description": "", "mode": "adapted", "horizon": 8, "impulses": {}},
+            json={"version": 1, "id": "improve_safety_budget_execution", "label": "Подмена", "description": "", "mode": "adapted", "horizon": 8, "impulses": {}},
             headers={"X-CSRF-Token": self.admin_csrf},
         )
         self.assertEqual(response.status_code, 409)

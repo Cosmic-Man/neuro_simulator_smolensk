@@ -210,6 +210,7 @@ th { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform
 .control-description { min-height: 44px; color: var(--muted); font-size: 14px; }
 .scenario-owner { margin: -4px 0 12px; padding: 8px 10px; border-radius: 10px; background: rgba(11,111,104,.07); color: var(--teal); font-size: 12px; font-weight: 700; }
 .slider-heading { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 10px; font-size: 13px; font-weight: 800; }
+.slider-heading small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
 .mini-button { padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
 .slider-list { max-height: 390px; overflow-y: auto; padding-right: 7px; }
 .slider-item { padding: 10px 0; border-top: 1px solid var(--line); }

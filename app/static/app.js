@@ -177,6 +177,7 @@ function renderOverview() {
   document.getElementById("latestPeriod").textContent = `Данные за ${latest.period}`;
   document.getElementById("nodeCount").textContent = state.metadata.fcm.nodes;
   document.getElementById("edgeCount").textContent = state.metadata.fcm.edges;
+  document.getElementById("scenarioCount").textContent = state.scenarios.filter(item => item.builtin).length;
   const cards = [
     { label: "Безопасность", value: latest.traffic_safety, unit: "из 100", color: colors.coral },
     { label: "Рейсы по расписанию", value: latest.regularity, unit: "%", color: colors.teal },
@@ -348,7 +349,7 @@ function renderScenarioControls(selectedReference = null) {
   if (selectedReference && state.scenarios.some(item => scenarioReference(item) === selectedReference)) select.value = selectedReference;
   const adjustable = state.metadata.nodes.filter(node => node.adjustable);
   const primaryIds = new Set(["road_budget_execution", "transit_budget_execution", "safety_budget_execution", "road_repair", "crossings"]);
-  const renderSlider = node => `<div class="slider-item"><div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div><input type="range" min="-0.30" max="0.30" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}"></div>`;
+  const renderSlider = node => `<div class="slider-item"><div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div><input type="range" min="-1" max="1" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}: от -1 до +1"></div>`;
   const primary = adjustable.filter(node => primaryIds.has(node.id));
   const advanced = adjustable.filter(node => !primaryIds.has(node.id));
   document.getElementById("scenarioSliders").innerHTML = `${primary.map(renderSlider).join("")}<details><summary>Дополнительные узлы</summary>${advanced.map(renderSlider).join("")}</details>`;
@@ -522,14 +523,22 @@ async function exportSelectedScenario() {
   } catch (error) { showToast(error.message, true); }
 }
 
-function plotScenario(div, baseline, scenario, key, unit, customDataKey = null) {
+async function plotScenario(div, baseline, scenario, key, unit, customDataKey = null) {
+  const plot = document.getElementById(div);
   const customBaseline = customDataKey ? baseline.map(row => row[customDataKey]) : null;
   const customScenario = customDataKey ? scenario.map(row => row[customDataKey]) : null;
   const hoverExtra = customDataKey ? "<br>ДТП: %{customdata:.2f}" : "";
-  Plotly.react(div, [
+  await Plotly.react(plot, [
     { x: baseline.map(row => row.period), y: baseline.map(row => row[key]), customdata: customBaseline, name: "Инерционный", type: "scatter", mode: "lines", line: { color: "#a4afae", width: 2, dash: "dot" }, hovertemplate: `%{x}<br>%{y:.2f} ${unit}${hoverExtra}<extra></extra>` },
     { x: scenario.map(row => row.period), y: scenario.map(row => row[key]), customdata: customScenario, name: "Сценарий", type: "scatter", mode: "lines+markers", line: { color: colors.teal, width: 3 }, marker: { size: 6 }, hovertemplate: `%{x}<br>%{y:.2f} ${unit}${hoverExtra}<extra></extra>` },
-  ], { ...baseLayout, margin: { l: 48, r: 12, t: 36, b: 48 }, yaxis: { ...baseLayout.yaxis, title: unit }, legend: { ...baseLayout.legend, y: 1.18 } }, plotConfig);
+  ], {
+    ...baseLayout, autosize: true, margin: { l: 48, r: 12, t: 36, b: 48 },
+    xaxis: { ...baseLayout.xaxis, autorange: true },
+    yaxis: { ...baseLayout.yaxis, title: unit, autorange: true },
+    legend: { ...baseLayout.legend, y: 1.18 },
+  }, plotConfig);
+  await Plotly.Plots.resize(plot);
+  await Plotly.relayout(plot, { "xaxis.autorange": true, "yaxis.autorange": true });
 }
 
 function signed(value, digits = 1) {
@@ -596,10 +605,12 @@ async function runScenario() {
       horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
     }) });
     if (state.user.role !== "observer") {
-      plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents");
-      plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%");
-      plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы");
-      plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы");
+      await Promise.all([
+        plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
+        plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
+        plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы"),
+        plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
+      ]);
     }
     renderBusinessSummary(result);
     state.budgetAnalysis = result.budget_analysis;

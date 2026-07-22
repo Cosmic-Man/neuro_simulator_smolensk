@@ -85,7 +85,7 @@ class ScenarioStoreTests(unittest.TestCase):
 
     def test_builtin_scenario_is_protected(self) -> None:
         payload = self.payload()
-        payload["id"] = "safety"
+        payload["id"] = "improve_safety_budget_execution"
         with self.assertRaises(ScenarioConflictError):
             ScenarioStore(self.session).save(payload, self.owner)
 

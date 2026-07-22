@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/assets/styles.css?v=20260722-observer-method-card">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260722-observer-seven-sections"></script>
+  <script defer src="/assets/app.js?v=20260722-balanced-builtins"></script>
 </head>
 <body>
   <section id="loginView" class="auth-view" hidden>
@@ -69,7 +69,7 @@
         <dl>
           <div><dt id="nodeCount">16</dt><dd>узлов</dd></div>
           <div><dt id="edgeCount">34</dt><dd>связей</dd></div>
-          <div><dt>7</dt><dd>сценариев</dd></div>
+          <div><dt id="scenarioCount">15</dt><dd>базовых сценариев</dd></div>
         </dl>
       </aside>
     </div>
@@ -223,7 +223,7 @@
             <label>Модель<select id="scenarioMode"><option value="adapted">FCM + ANFIS</option><option value="expert">Экспертная FCM</option></select></label>
             <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
           </div>
-          <div class="slider-heading observer-editor-only"><span>Дополнительные импульсы</span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
+          <div class="slider-heading observer-editor-only"><span>Дополнительные импульсы <small>от −1 до +1</small></span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
           <div id="scenarioSliders" class="slider-list observer-editor-only"></div>
           <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
