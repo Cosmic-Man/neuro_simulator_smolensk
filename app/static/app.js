@@ -64,16 +64,17 @@ const technicalGuide = [
     explanation: "Показывает, насколько прогнозы совпадали с уже известными данными. Заказчик видит, на какой метод можно опираться и где сохраняется неопределённость.",
   },
   {
-    id: "map", index: "A5", title: "Карта связей FCM",
-    explanation: "Объясняет, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. Карта помогает проследить логику уже полученного сценарного результата.",
-  },
-  {
-    id: "analysis", index: "A6", title: "Boxplot и функции принадлежности",
+    id: "analysis", index: "A5", title: "Диаграмма размаха и функции принадлежности",
     explanation: "Показывает исходную проверку данных: типичные диапазоны, выбросы, нечёткие границы оценок и веса итогового индекса. Это делает расчёт из Pipeline.ipynb наглядным для заказчика.",
   },
 ];
 
-const sectionGuide = [...customerGuide, ...technicalGuide];
+const mapGuide = {
+  id: "map", index: "06", title: "Граф связей FCM",
+  explanation: "Показывает, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. По графу можно проследить логику сценарного результата.",
+};
+
+const sectionGuide = [...customerGuide, ...technicalGuide, mapGuide];
 
 function resizeSectionVisuals(section) {
   const resize = () => {
@@ -107,6 +108,8 @@ function initializePageStructure() {
   const appendixContent = document.getElementById("technicalAppendixContent");
   customerGuide.forEach(item => main.insertBefore(document.getElementById(item.id), appendix));
   technicalGuide.forEach(item => appendixContent.appendChild(document.getElementById(item.id)));
+  // Граф FCM — отдельный последний раздел, доступный напрямую из верхнего меню.
+  main.appendChild(document.getElementById("map"));
 
   sectionGuide.forEach(item => {
     const section = document.getElementById(item.id);
