@@ -11,7 +11,7 @@ from .data import DataBundle, NODE_IDS, NODE_SPECS, load_problem_b_data
 from .fcm import EXPERT_EDGES, WeightSet, build_weight_set, fcm_forecast, fcm_step, graph_payload, impulse_vector, next_period
 from .fuzzy import FUZZY_INDEX_SPECS
 from .models import ANFISRegressor, RidgeRegressor, SampleSet, build_lag_samples, build_one_step_samples, metric_set, split_mask
-from .scenarios import ScenarioStore
+from .scenarios import builtin_items, get_builtin
 
 
 @dataclass(frozen=True)
@@ -64,10 +64,8 @@ class ProblemBService:
     def __init__(
         self,
         bundle: DataBundle | None = None,
-        scenario_store: ScenarioStore | None = None,
     ):
         self.bundle = bundle or load_problem_b_data()
-        self.scenario_store = scenario_store or ScenarioStore()
         self.ridge_models: dict[str, RidgeRegressor] = {}
         self.lag_samples: dict[str, SampleSet] = {}
         self.anfis_models: dict[str, ANFISRegressor] = {}
@@ -252,7 +250,7 @@ class ProblemBService:
             "fcm": {"nodes": len(NODE_IDS), "edges": len(EXPERT_EDGES), "alpha": 0.35, "lambda": 1.3, "blend": "0.70 × expert + 0.30 × data"},
             "nodes": [spec.__dict__ for spec in NODE_SPECS],
             "targets": [config.__dict__ for config in TARGETS.values()] + [{"id": "integrated_mobility", "label": "Итоговый индекс безопасности и мобильности", "unit": "баллы из 100"}],
-            "scenarios": self.scenario_store.list(),
+            "scenarios": builtin_items(),
             "fuzzy_indices": [{"id": spec.id, "label": spec.label, "rules": len(spec.rule_table)} for spec in FUZZY_INDEX_SPECS],
             "anfis": anfis,
             "proxies": [{"id": "digital_mobility", "description": "Прямого ряда цифровизации нет; сценарий воздействует на регулярность, скорость и загруженность."}],
@@ -335,10 +333,7 @@ class ProblemBService:
         return {**self._evaluation, "sensitivity": self._sensitivity_cache}
 
     def scenarios(self) -> list[dict[str, Any]]:
-        return self.scenario_store.list()
-
-    def save_scenario(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return self.scenario_store.save(payload)
+        return builtin_items()
 
     def _weights_array(self, mode: str) -> np.ndarray:
         if mode == "expert":
@@ -392,8 +387,11 @@ class ProblemBService:
         mode: str | None = None,
         horizon: int | None = None,
         custom_impulses: Mapping[str, float] | None = None,
+        scenario_payload: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        scenario = self.scenario_store.get(scenario_id)
+        scenario = dict(scenario_payload) if scenario_payload is not None else get_builtin(scenario_id)
+        if scenario is None:
+            raise ValueError(f"Неизвестный сценарий: {scenario_id}")
         selected_mode = mode or str(scenario["mode"])
         selected_horizon = int(horizon if horizon is not None else scenario["horizon"])
         if not 1 <= selected_horizon <= 20:
@@ -439,6 +437,15 @@ class ProblemBService:
         accident_delta = float(final_scenario["accidents"] - final_base["accidents"])
         explanations.insert(1, f"Расчётный показатель ДТП меняется на {accident_delta:+.2f} на 10 тыс. жителей; отрицательное изменение означает улучшение.")
 
+        summary = self._business_summary(final_base, final_scenario)
+        budget_analysis = self._budget_analysis(
+            initial=initial,
+            weights=weights,
+            baseline_final=final_base,
+            horizon=selected_horizon,
+            mode=selected_mode,
+        )
+
         return {
             "scenario": {"id": scenario_id, "label": scenario["label"], "description": scenario["description"], "builtin": scenario["builtin"]},
             "mode": selected_mode,
@@ -447,4 +454,99 @@ class ProblemBService:
             "baseline": baseline_rows,
             "scenario_result": scenario_rows,
             "explanation": explanations,
+            "summary": summary,
+            "budget_analysis": budget_analysis,
+        }
+
+    @staticmethod
+    def _relative_change(baseline: float, scenario: float) -> float | None:
+        if abs(baseline) < 1e-9:
+            return None
+        return round((scenario - baseline) / abs(baseline) * 100.0, 4)
+
+    def _business_summary(
+        self,
+        baseline: Mapping[str, Any],
+        scenario: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        definitions = {
+            "safety": ("safety_index", "Безопасность движения", "индексных пунктов"),
+            "regularity": ("regularity", "Регулярность транспорта", "процентных пунктов"),
+            "accessibility": ("accessibility", "Транспортная доступность", "индексных пунктов"),
+            "integrated_mobility": ("integrated_mobility", "Итоговый индекс мобильности", "индексных пунктов"),
+        }
+        output: dict[str, Any] = {}
+        for metric_id, (source_key, label, delta_unit) in definitions.items():
+            base_value = float(baseline[source_key])
+            scenario_value = float(scenario[source_key])
+            output[metric_id] = {
+                "label": label,
+                "baseline": round(base_value, 4),
+                "scenario": round(scenario_value, 4),
+                "delta_points": round(scenario_value - base_value, 4),
+                "delta_unit": delta_unit,
+                "relative_change_percent": self._relative_change(base_value, scenario_value),
+            }
+
+        base_accidents = float(baseline["accidents"])
+        scenario_accidents = float(scenario["accidents"])
+        improvement = None
+        if abs(base_accidents) >= 1e-9:
+            improvement = round((base_accidents - scenario_accidents) / abs(base_accidents) * 100.0, 4)
+        output["accidents"] = {
+            "label": "ДТП на 10 тыс. жителей",
+            "baseline": round(base_accidents, 4),
+            "scenario": round(scenario_accidents, 4),
+            "delta": round(scenario_accidents - base_accidents, 4),
+            "improvement_percent": improvement,
+        }
+        return output
+
+    def _budget_analysis(
+        self,
+        *,
+        initial: np.ndarray,
+        weights: np.ndarray,
+        baseline_final: Mapping[str, Any],
+        horizon: int,
+        mode: str,
+        standard_impulse: float = 0.07,
+    ) -> dict[str, Any]:
+        budget_nodes = (
+            "road_budget_execution",
+            "transit_budget_execution",
+            "safety_budget_execution",
+        )
+        labels = {spec.id: spec.label for spec in NODE_SPECS}
+        programs: list[dict[str, Any]] = []
+        for node in budget_nodes:
+            states = fcm_forecast(
+                initial,
+                weights,
+                horizon,
+                impulse_vector({node: standard_impulse}),
+            )
+            scenario_final = self._scenario_row(horizon, states[-1])
+            summary = self._business_summary(baseline_final, scenario_final)
+            programs.append(
+                {
+                    "node": node,
+                    "label": labels[node],
+                    "standard_impulse": standard_impulse,
+                    "metrics": {
+                        key: summary[key]
+                        for key in ("safety", "regularity", "accessibility", "integrated_mobility")
+                    },
+                }
+            )
+        return {
+            "mode": mode,
+            "horizon": horizon,
+            "standard_impulse": standard_impulse,
+            "default_target": "integrated_mobility",
+            "programs": programs,
+            "methodology_note": (
+                "Рейтинг сравнивает одинаковое безразмерное воздействие FCM и не является "
+                "расчётом финансового ROI или рекомендацией суммы в рублях."
+            ),
         }
