@@ -119,6 +119,28 @@ class FuzzySystem:
         for premise, consequent in self.rules:
             strength = min(memberships[name].get(term, 0.0) for name, term in premise.items())
             aggregated[consequent] = max(aggregated[consequent], strength)
+        if not any(strength > 0.0 for strength in aggregated.values()):
+            # Канонические JSON-таблицы могут быть неполными (например, 235 из
+            # 3**6 комбинаций transport_r1). В таком разрыве используем вывод
+            # ближайшего существующего правила вместо ложного индекса 0.
+            dominant_positions = {
+                name: list(variable.terms).index(max(memberships[name], key=memberships[name].get))
+                for name, variable in self.inputs.items()
+            }
+
+            def rule_distance(rule: tuple[dict[str, str], str]) -> tuple[int, float]:
+                premise, _ = rule
+                ordinal_distance = sum(
+                    abs(list(self.inputs[name].terms).index(term) - dominant_positions[name])
+                    for name, term in premise.items()
+                )
+                compatibility = sum(
+                    memberships[name].get(term, 0.0) for name, term in premise.items()
+                )
+                return ordinal_distance, -compatibility
+
+            _, nearest_consequent = min(self.rules, key=rule_distance)
+            aggregated[nearest_consequent] = 1.0
         return self._defuzzify(aggregated, output_var)
 
     def _defuzzify(

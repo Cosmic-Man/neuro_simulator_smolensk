@@ -9,6 +9,7 @@ const state = {
   modelStatus: null,
   scenarios: [],
   baseImpulses: {},
+  baseIndexValues: {},
   graph: null,
   cy: null,
   budgetAnalysis: null,
@@ -143,7 +144,7 @@ class ApiError extends Error {
 async function api(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
-  if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
+  if (options.body && !(options.body instanceof FormData) && !(options.body instanceof Blob)) headers["Content-Type"] = "application/json";
   const response = await fetch(path, { ...options, method, headers, credentials: "same-origin" });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -471,6 +472,27 @@ async function loadDatasetDetail(name) {
   renderDatasetDetail();
 }
 
+async function uploadDataset() {
+  const input = document.getElementById("datasetFile");
+  const button = document.getElementById("uploadDataset");
+  const file = input.files[0];
+  if (!file) { showToast("Выберите XLSX-файл", true); return; }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) { showToast("Можно загрузить только XLSX-файл", true); return; }
+  if (file.size > 20 * 1024 * 1024) { showToast("XLSX-файл превышает 20 МБ", true); return; }
+  button.disabled = true; button.textContent = "Проверка и пересчёт…";
+  try {
+    await api(`/api/datasets/upload?name=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      body: file,
+    });
+    input.value = "";
+    showToast(`Файл ${file.name} загружен. Индексы и транспортная доступность пересчитаны.`);
+    await initializeApplication();
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Загрузить XLSX и пересчитать"; }
+}
+
 async function activateDataset() {
   const button = document.getElementById("activateDataset");
   button.disabled = true; button.textContent = "Пересчёт…";
@@ -648,19 +670,40 @@ function fillScenarioSelect(select) {
   });
 }
 
+const indexControls = [
+  ["urban_environment", "Индекс качества современной городской среды"],
+  ["road_quality_dtc", "Индекс качества ДТК"],
+  ["accessible_environment", "Индекс удовлетворённости доступной среды"],
+  ["public_spaces", "Индекс качества общественного благоустройства"],
+  ["road_quality_transit", "Индекс качества ГОТ"],
+  ["parking_safety", "Индекс качества парковок и безопасности движения"],
+];
+
+let indexRecalculationTimer = null;
+
+function indexValuesFromControls() {
+  return Object.fromEntries([...document.querySelectorAll("#scenarioSliders input[data-index]")]
+    .map(input => [input.dataset.index, Number(input.value)]));
+}
+
 function renderScenarioControls(selectedReference = null) {
   const select = document.getElementById("scenarioPreset");
   fillScenarioSelect(select);
   if (!selectedReference && state.scenarios.some(item => item.id === "inertial")) select.value = "inertial";
   if (selectedReference && state.scenarios.some(item => scenarioReference(item) === selectedReference)) select.value = selectedReference;
-  const adjustable = state.metadata.nodes.filter(node => node.adjustable);
-  const primaryIds = new Set(["road_budget_execution", "transit_budget_execution", "safety_budget_execution", "road_repair", "crossings"]);
-  const renderSlider = node => `<div class="slider-item"><div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div><input type="range" min="-1" max="1" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}: от -1 до +1"></div>`;
-  const primary = adjustable.filter(node => primaryIds.has(node.id));
-  const advanced = adjustable.filter(node => !primaryIds.has(node.id));
-  document.getElementById("scenarioSliders").innerHTML = `${primary.map(renderSlider).join("")}<details><summary>Дополнительные узлы</summary>${advanced.map(renderSlider).join("")}</details>`;
-  document.querySelectorAll("#scenarioSliders input").forEach(input => input.addEventListener("input", () => {
-    document.getElementById(`value-${input.dataset.node}`).textContent = Number(input.value).toFixed(2);
+  state.baseIndexValues = Object.fromEntries(indexControls.map(([id]) => {
+    const item = state.indices.fuzzy.find(index => index.id === id);
+    return [id, Number(item.values.at(-1))];
+  }));
+  const renderSlider = ([id, label]) => {
+    const value = state.baseIndexValues[id];
+    return `<div class="slider-item"><div class="slider-meta"><span>${escapeHtml(label)}</span><span id="value-${id}" class="slider-value">${formatNumber(value, 1)}</span></div><input type="range" min="0" max="100" step="0.1" value="${value}" data-index="${id}" aria-label="${escapeHtml(label)}: от 0 до 100"></div>`;
+  };
+  document.getElementById("scenarioSliders").innerHTML = indexControls.map(renderSlider).join("");
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => input.addEventListener("input", () => {
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+    clearTimeout(indexRecalculationTimer);
+    indexRecalculationTimer = setTimeout(() => runScenario(), 250);
   }));
   applySelectedScenario();
 }
@@ -676,17 +719,23 @@ function applySelectedScenario() {
   }
   horizon.value = scenario.horizon;
   state.baseImpulses = { ...scenario.impulses };
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     input.value = state.baseImpulses[input.dataset.node] || 0;
     input.dispatchEvent(new Event("input"));
   });
 }
 
-function resetSliders() { applySelectedScenario(); }
+function resetSliders() {
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => {
+    input.value = state.baseIndexValues[input.dataset.index];
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+  });
+  runScenario();
+}
 
 function scenarioImpulsesFromControls() {
   const impulses = {};
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     const value = Number(input.value);
     if (Math.abs(value) > .0001) impulses[input.dataset.node] = Number(value.toFixed(4));
   });
@@ -868,7 +917,7 @@ async function runScenario() {
   button.disabled = true; button.textContent = "Расчёт…";
   const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
   const impulses = {};
-  if (selected?.builtin) document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  if (selected?.builtin) document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     const delta = Number(input.value) - Number(state.baseImpulses[input.dataset.node] || 0);
     if (Math.abs(delta) > .0001) impulses[input.dataset.node] = delta;
   });
@@ -878,6 +927,7 @@ async function runScenario() {
       scenario_payload: selected?.builtin ? null : scenarioPayloadFromControls(selected),
       mode: document.getElementById("scenarioMode").value,
       horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
+      index_values: indexValuesFromControls(),
     }) });
     await Promise.all([
       plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
@@ -951,6 +1001,7 @@ function bindEvents() {
   document.getElementById("membershipIndex").addEventListener("change", renderMembershipVariableOptions);
   document.getElementById("membershipVariable").addEventListener("change", renderMembershipPlot);
   document.getElementById("datasetSelect").addEventListener("change", event => loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true)));
+  document.getElementById("uploadDataset").addEventListener("click", uploadDataset);
   document.getElementById("datasetRowSelect").addEventListener("change", event => populateDatasetRow(event.target.value));
   document.getElementById("activateDataset").addEventListener("click", activateDataset);
   document.getElementById("newDatasetRow").addEventListener("click", () => {

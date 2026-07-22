@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/assets/styles.css?v=20260723-index-overflow">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260723-objective-recalculation"></script>
+  <script defer src="/assets/app.js?v=20260723-xlsx-index-controls"></script>
 </head>
 <body>
   <div id="appShell">
@@ -206,7 +206,7 @@
       </div>
       <div class="scenario-layout">
         <aside class="panel scenario-controls">
-          <div><span id="scenarioControlKicker" class="panel-kicker">Настройки</span><h3 id="scenarioControlTitle">Управляющие воздействия</h3></div>
+          <div><span id="scenarioControlKicker" class="panel-kicker">Рассчитано из активного XLSX</span><h3 id="scenarioControlTitle">Шесть индексов для модели доступности</h3></div>
           <label>Готовый сценарий<select id="scenarioPreset"></select></label>
           <p id="scenarioDescription" class="control-description"></p>
           <details class="advanced-settings">
@@ -223,7 +223,7 @@
               <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
             </div>
           </details>
-          <div class="slider-heading"><span>Дополнительные импульсы <small>от −1 до +1</small></span><button id="resetSliders" class="mini-button" type="button">Сбросить</button></div>
+          <div class="slider-heading"><span>Индексы по данным Кирилла <small>от 0 до 100 · изменение сразу пересчитывает доступность</small></span><button id="resetSliders" class="mini-button" type="button">Вернуть значения XLSX</button></div>
           <div id="scenarioSliders" class="slider-list"></div>
           <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
@@ -338,6 +338,10 @@
         <article class="panel dataset-selector-card">
           <span class="panel-kicker">Источник расчёта</span><h3>Какой датасет использовать</h3>
           <p class="chart-description">Активный файл определяет все показатели, графики и рекомендации. Выбор применяется ко всей текущей демонстрации.</p>
+          <div class="dataset-upload">
+            <input id="datasetFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <button id="uploadDataset" class="primary-button" type="button">Загрузить XLSX и пересчитать</button>
+          </div>
           <label>Файл из datasets_ready<select id="datasetSelect"></select></label>
           <button id="activateDataset" class="primary-button" type="button">Использовать для расчёта</button>
           <div id="datasetSummary" class="dataset-summary"></div>

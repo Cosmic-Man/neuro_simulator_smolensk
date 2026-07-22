@@ -314,6 +314,8 @@ input[type="range"] { width: 100%; accent-color: var(--teal); }
 .retraining-card .primary-button { flex: 0 0 auto; }
 .dataset-selector-card, .dataset-editor-card, .dataset-preview-card { padding: 24px; }
 .dataset-selector-card { align-self: start; display: grid; gap: 14px; }
+.dataset-upload { display: grid; gap: 8px; padding: 14px; border: 1px dashed var(--line); border-radius: 14px; background: rgba(255,255,255,.45); }
+.dataset-upload input[type="file"] { min-width: 0; color: var(--muted); font-size: 12px; }
 .dataset-selector-card h3, .dataset-editor-card h3, .dataset-preview-card h3 { margin: 5px 0 0; }
 .dataset-summary { border-radius: 16px; padding: 16px; background: rgba(11,111,104,.08); display: grid; gap: 5px; }
 .dataset-summary strong { color: var(--teal); }

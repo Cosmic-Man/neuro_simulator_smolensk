@@ -482,9 +482,8 @@ class PipelineANFIS:
         self.centers_ = self._kmeans(x_train)
         distances = np.linalg.norm(x_train[:, None, :] - self.centers_[None, :, :], axis=2)
         self.sigmas_ = np.clip(distances.mean(axis=0), 0.1, 1.5)
-        # Target в Pipeline — линейная свёртка этих же восьми входов. Одинаковая
-        # линейная инициализация консеквентов даёт устойчивую стартовую точку,
-        # после чего Adam может уточнить локальные правила без провала вне train.
+        # Линейная регрессия X(t) -> y(t+1) даёт консеквентам устойчивую стартовую
+        # точку; Adam затем уточняет локальные правила по validation без доступа к test.
         x_bias = np.column_stack([np.ones(len(x_train)), x_train])
         linear_consequent = np.linalg.lstsq(x_bias, y_train, rcond=None)[0]
         self.consequents_ = np.tile(linear_consequent, (self.n_rules, 1))

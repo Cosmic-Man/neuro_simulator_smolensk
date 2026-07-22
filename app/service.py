@@ -88,8 +88,8 @@ MODEL_CATALOG = {
     "anfis": {
         "role": "Основная модель Pipeline",
         "how": "Объединяет шесть гауссовых правил Сугено и линейные выводы правил; параметры обучаются Adam.",
-        "inputs": "Все восемь нечётких индексов текущего периода после RobustScaler.",
-        "purpose": "Воспроизводит нелинейную модель из Pipeline.ipynb и сравнивается с двумя простыми baseline.",
+        "inputs": "Восемь нечётких индексов квартала t после RobustScaler; целевая переменная — итоговый индекс квартала t+1.",
+        "purpose": "Прогнозирует следующий квартал без использования его показателей и сравнивается с двумя временными baseline.",
     },
 }
 
@@ -105,6 +105,15 @@ NODE_ACTIONS = {
     "average_speed": "Убрать задержки на узких местах, настроить приоритет и координацию движения.",
     "crossings": "Улучшить регулируемые переходы, освещение и организацию конфликтных точек.",
     "congestion": "Снизить перегрузку сети управлением потоками, парковкой и маршрутами объезда.",
+}
+
+INDEX_CONTROL_NODES = {
+    "urban_environment": "transport_environment",
+    "road_quality_dtc": "road_condition",
+    "accessible_environment": "transport_accessibility",
+    "public_spaces": "pedestrian_infrastructure",
+    "road_quality_transit": "transport_regularity",
+    "parking_safety": "traffic_safety",
 }
 
 FUZZY_FEATURE_PRIORITY = {
@@ -387,9 +396,17 @@ class ProblemBService:
 
     def _build_pipeline_evaluation(self) -> dict[str, Any]:
         feature_names = [spec.id for spec in FUZZY_INDEX_SPECS]
-        periods = self.bundle.fuzzy_indices.index.to_numpy(dtype=str)
-        x_raw = self.bundle.fuzzy_indices.loc[:, feature_names].to_numpy(dtype=float)
-        y_raw = self.bundle.raw["pipeline_target"].to_numpy(dtype=float)
+        all_periods = self.bundle.fuzzy_indices.index.to_numpy(dtype=str)
+        all_x_raw = self.bundle.fuzzy_indices.loc[:, feature_names].to_numpy(dtype=float)
+        all_y_raw = self.bundle.raw["pipeline_target"].to_numpy(dtype=float)
+
+        # Прогноз на один квартал: JSON-индексы периода t предсказывают target t+1.
+        # Маски относятся к периоду цели, поэтому будущие строки не входят в train.
+        input_periods = all_periods[:-1]
+        periods = all_periods[1:]
+        x_raw = all_x_raw[:-1]
+        y_raw = all_y_raw[1:]
+        previous_raw = all_y_raw[:-1]
         train_mask = periods <= TRAIN_END
         validation_mask = (periods >= "2019Q1") & (periods <= VALIDATION_END)
 
@@ -397,6 +414,7 @@ class ProblemBService:
         self.pipeline_y_scaler = RobustScaler().fit(y_raw[train_mask, None])
         x_scaled = self.pipeline_x_scaler.transform(x_raw)
         y_scaled = self.pipeline_y_scaler.transform(y_raw[:, None]).reshape(-1)
+        previous_scaled = self.pipeline_y_scaler.transform(previous_raw[:, None]).reshape(-1)
         self.pipeline_anfis = PipelineANFIS(feature_names).fit(
             x_scaled[train_mask],
             y_scaled[train_mask],
@@ -405,17 +423,19 @@ class ProblemBService:
         )
         anfis_prediction = self.pipeline_anfis.predict(x_scaled)
 
-        lagged = np.full((len(y_scaled), 4), np.nan, dtype=float)
-        for index in range(4, len(y_scaled)):
+        # Baseline используют только значения target, известные до целевого квартала.
+        all_y_scaled = self.pipeline_y_scaler.transform(all_y_raw[:, None]).reshape(-1)
+        lagged = np.full((len(all_y_scaled), 4), np.nan, dtype=float)
+        for index in range(4, len(all_y_scaled)):
             lagged[index] = (
-                y_scaled[index - 1],
-                y_scaled[index - 2],
-                y_scaled[index - 4],
-                float(np.mean(y_scaled[index - 4:index])),
+                all_y_scaled[index - 1],
+                all_y_scaled[index - 2],
+                all_y_scaled[index - 4],
+                float(np.mean(all_y_scaled[index - 4:index])),
             )
-        ridge_train = train_mask & np.isfinite(lagged).all(axis=1)
+        ridge_train = (all_periods <= TRAIN_END) & np.isfinite(lagged).all(axis=1)
         ridge_x = lagged[ridge_train]
-        ridge_y = y_scaled[ridge_train]
+        ridge_y = all_y_scaled[ridge_train]
         ridge_x_mean = ridge_x.mean(axis=0)
         ridge_y_mean = float(ridge_y.mean())
         ridge_centered = ridge_x - ridge_x_mean
@@ -423,7 +443,7 @@ class ProblemBService:
             ridge_centered.T @ ridge_centered + np.eye(ridge_centered.shape[1]),
             ridge_centered.T @ (ridge_y - ridge_y_mean),
         )
-        ridge_prediction = np.full(len(y_scaled), np.nan, dtype=float)
+        ridge_prediction = np.full(len(all_y_scaled), np.nan, dtype=float)
         valid_lags = np.isfinite(lagged).all(axis=1)
         ridge_prediction[valid_lags] = (
             ridge_y_mean + (lagged[valid_lags] - ridge_x_mean) @ ridge_coef
@@ -435,18 +455,11 @@ class ProblemBService:
         for split in ("validation", "test"):
             mask = split_mask(periods, split)
             selected = np.flatnonzero(mask)
-            split_start = int(selected[0])
-            history = y_scaled[:split_start]
-            seasonal_values: list[float] = []
-            for offset in range(len(selected)):
-                history_index = len(history) - 4 + offset
-                if history_index < len(history):
-                    seasonal_values.append(float(history[history_index]))
-                else:
-                    seasonal_values.append(seasonal_values[history_index - len(history)])
+            target_indexes = selected + 1
+            seasonal_values = all_y_scaled[target_indexes - 4]
             predictions_by_model = {
                 "seasonal_naive": np.asarray(seasonal_values),
-                "ridge": ridge_prediction[mask],
+                "ridge": ridge_prediction[target_indexes],
                 "anfis": anfis_prediction[mask],
             }
             rows = []
@@ -454,6 +467,7 @@ class ProblemBService:
                 rows.append(
                     {
                         "period": periods[index],
+                        "input_period": input_periods[index],
                         "actual": round(float(y_scaled[index]), 6),
                         **{
                             model: round(float(values[position]), 6)
@@ -463,7 +477,7 @@ class ProblemBService:
                 )
             prediction_rows[split] = rows
             actual = y_scaled[mask]
-            previous = y_scaled[np.maximum(selected - 1, 0)]
+            previous = previous_scaled[mask]
             for model, values in predictions_by_model.items():
                 metrics = self._pipeline_metric_set(
                     actual,
@@ -500,8 +514,9 @@ class ProblemBService:
                 for model_id, label in MODEL_LABELS.items()
             ],
             "note": (
-                "Pipeline.ipynb: train до 2018 года (51 строка после удаления выброса), "
-                "validation 2019–2022 (16), test 2023–2025 (12). Метрики показаны после RobustScaler."
+                "Прогноз без утечки: восемь JSON-индексов квартала t предсказывают target квартала t+1. "
+                "Train заканчивается целью 2018Q4, validation — 2019–2022, test — 2023–2025. "
+                "RobustScaler обучается только на train; test не используется при обучении и настройке ANFIS."
             ),
         }
 
@@ -993,6 +1008,7 @@ class ProblemBService:
         mode: str | None = None,
         horizon: int | None = None,
         custom_impulses: Mapping[str, float] | None = None,
+        index_values: Mapping[str, float] | None = None,
         scenario_payload: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         scenario = validate_scenario(scenario_payload) if scenario_payload is not None else get_builtin(scenario_id)
@@ -1014,9 +1030,22 @@ class ProblemBService:
             impulses[key] = float(np.clip(combined, -IMPULSE_LIMIT, IMPULSE_LIMIT))
 
         initial = self.bundle.factors.iloc[-1].to_numpy(dtype=float)
+        scenario_initial = initial.copy()
+        node_positions = {spec.id: index for index, spec in enumerate(NODE_SPECS)}
+        fuzzy_latest = self.bundle.fuzzy_indices.iloc[-1]
+        for index_id, value in (index_values or {}).items():
+            if index_id not in INDEX_CONTROL_NODES:
+                raise ValueError(f"Индекс {index_id} нельзя изменять в лаборатории")
+            numeric = float(value)
+            if not np.isfinite(numeric) or not 0.0 <= numeric <= 100.0:
+                raise ValueError(f"Значение индекса {index_id} должно быть в диапазоне [0, 100]")
+            node_id = INDEX_CONTROL_NODES[index_id]
+            delta = (numeric - float(fuzzy_latest[index_id])) / 100.0
+            position = node_positions[node_id]
+            scenario_initial[position] = float(np.clip(scenario_initial[position] + delta, 0.0, 1.0))
         weights = self._weights_array(selected_mode)
         baseline_states = fcm_forecast(initial, weights, selected_horizon)
-        scenario_states = fcm_forecast(initial, weights, selected_horizon, impulse_vector(impulses))
+        scenario_states = fcm_forecast(scenario_initial, weights, selected_horizon, impulse_vector(impulses))
         baseline_rows = [self._scenario_row(step, state) for step, state in enumerate(baseline_states)]
         scenario_rows = [self._scenario_row(step, state) for step, state in enumerate(scenario_states)]
 

@@ -33,7 +33,7 @@ class DataPipelineTests(unittest.TestCase):
         self.assertNotIn("linear_expert_index", self.bundle.raw.columns)
         self.assertEqual(self.bundle.fuzzy_indices.shape, (79, 8))
         self.assertTrue(np.isfinite(self.bundle.fuzzy_indices.to_numpy()).all())
-        self.assertGreaterEqual(float(self.bundle.fuzzy_indices.min().min()), 0.0)
+        self.assertGreater(float(self.bundle.fuzzy_indices.min().min()), 0.0)
         self.assertLessEqual(float(self.bundle.fuzzy_indices.max().max()), 100.0)
         self.assertEqual(self.bundle.factors.columns.to_list(), NODE_IDS)
         self.assertTrue(np.isfinite(self.bundle.factors.to_numpy()).all())

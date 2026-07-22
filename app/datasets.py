@@ -53,6 +53,37 @@ class DatasetStore:
     def path(self, name: str) -> Path:
         return self._resolve(name)
 
+    def import_xlsx(
+        self,
+        name: str,
+        content: bytes,
+        validator: Callable[[Path], object],
+    ) -> str:
+        safe_name = Path(name).name
+        if safe_name != name or not safe_name.lower().endswith(".xlsx"):
+            raise ValueError("Можно загрузить только XLSX-файл без каталогов в имени")
+        if not content:
+            raise ValueError("Загруженный XLSX-файл пуст")
+        if len(content) > 20 * 1024 * 1024:
+            raise ValueError("Размер XLSX-файла не должен превышать 20 МБ")
+        self.directory.mkdir(parents=True, exist_ok=True)
+        target = (self.directory / safe_name).resolve()
+        if target.parent != self.directory:
+            raise ValueError("Некорректное имя XLSX-файла")
+        descriptor, temp_name = tempfile.mkstemp(prefix=".upload-", suffix=".xlsx", dir=self.directory)
+        os.close(descriptor)
+        temp_path = Path(temp_name)
+        try:
+            temp_path.write_bytes(content)
+            try:
+                validator(temp_path)
+            except Exception as error:
+                raise ValueError(f"XLSX не прошёл проверку структуры Pipeline: {error}") from error
+            temp_path.replace(target)
+            return safe_name
+        finally:
+            temp_path.unlink(missing_ok=True)
+
     def summary(self, name: str) -> dict[str, object]:
         path = self._resolve(name)
         workbook, sheet = self._sheet(path)

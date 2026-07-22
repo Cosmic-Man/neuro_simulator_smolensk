@@ -5,7 +5,7 @@ import tracemalloc
 from threading import RLock
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import Body, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -33,6 +33,7 @@ class SimulateRequest(BaseModel):
     mode: Literal["expert", "adapted"] | None = None
     horizon: int | None = Field(default=None, ge=1, le=20)
     impulses: dict[str, float] = Field(default_factory=dict)
+    index_values: dict[str, float] = Field(default_factory=dict)
 
 
 class DatasetSelectPayload(BaseModel):
@@ -169,6 +170,24 @@ def select_dataset(payload: DatasetSelectPayload) -> dict[str, object]:
         raise dataset_error(error) from error
 
 
+@app.post("/api/datasets/upload", status_code=status.HTTP_201_CREATED)
+def upload_dataset(
+    name: str = Query(..., min_length=1, max_length=180),
+    content: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+) -> dict[str, object]:
+    global service
+    try:
+        with service_lock:
+            saved_name = dataset_store.import_xlsx(name, content, load_problem_b_data)
+            service = rebuild_service(dataset_store.path(saved_name))
+        return {
+            "name": saved_name,
+            "catalog": dataset_store.catalog(saved_name),
+        }
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as error:
+        raise dataset_error(error) from error
+
+
 @app.post("/api/datasets/{name}/rows", status_code=status.HTTP_201_CREATED)
 def append_dataset_row(name: str, payload: DatasetRowPayload) -> dict[str, object]:
     try:
@@ -244,6 +263,7 @@ def simulate(request: SimulateRequest) -> dict[str, object]:
             mode=request.mode,
             horizon=request.horizon,
             custom_impulses=request.impulses,
+            index_values=request.index_values,
             scenario_payload=scenario_payload,
         )
     except ValueError as error:

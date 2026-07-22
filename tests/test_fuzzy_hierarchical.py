@@ -49,11 +49,11 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
         }
         expected_last = {
             "urban_environment": 88.611092,
-            "road_quality_dtc": 0.0,
+            "road_quality_dtc": 87.000152,
             "road_wellbeing_dtc": 95.444293,
             "accessible_environment": 78.949130,
             "public_spaces": 95.545402,
-            "road_quality_transit": 0.0,
+            "road_quality_transit": 87.000152,
             "road_wellbeing_transit": 94.739771,
             "parking_safety": 95.196587,
         }
@@ -62,12 +62,12 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
         for name, expected in expected_last.items():
             self.assertAlmostEqual(self.bundle.fuzzy_indices.iloc[-1][name], expected, places=5, msg=name)
         self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[0], 14.5569163653, places=6)
-        self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[-1], 66.714047, places=5)
+        self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[-1], 91.301046, places=5)
         target = self.bundle.raw["pipeline_target"]
-        self.assertAlmostEqual(target.mean(), 46.934475, places=5)
-        self.assertAlmostEqual(target.std(), 14.203631, places=5)
+        self.assertAlmostEqual(target.mean(), 56.888990, places=5)
+        self.assertAlmostEqual(target.std(), 21.146976, places=5)
         self.assertAlmostEqual(target.min(), 14.556916, places=5)
-        self.assertAlmostEqual(target.max(), 67.437482, places=5)
+        self.assertAlmostEqual(target.max(), 91.301046, places=5)
 
 
 if __name__ == "__main__":

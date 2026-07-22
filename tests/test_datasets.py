@@ -40,6 +40,15 @@ class DatasetStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.read("../smolensk_dataset_shared.xlsx")
 
+    def test_xlsx_can_be_uploaded_and_validated(self) -> None:
+        content = self.target.read_bytes()
+        uploaded = self.store.import_xlsx("uploaded.xlsx", content, load_problem_b_data)
+        self.assertEqual(uploaded, "uploaded.xlsx")
+        self.assertEqual(self.store.read(uploaded)["rows"], 80)
+        with self.assertRaises(ValueError):
+            self.store.import_xlsx("broken.xlsx", b"not an xlsx", load_problem_b_data)
+        self.assertFalse((Path(self.temp_dir.name) / "broken.xlsx").exists())
+
     def test_new_quarter_marks_model_pending_until_full_retraining(self) -> None:
         model_dir = Path(self.temp_dir.name) / "models"
         service = ProblemBService(

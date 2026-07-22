@@ -93,16 +93,29 @@ class ModelTests(unittest.TestCase):
                 )
 
     def test_all_evaluation_metrics_are_finite(self) -> None:
-        catalog = self.service.evaluation()["model_catalog"]
-        self.assertEqual([item["id"] for item in catalog], list(self.service.evaluation()["model_labels"]))
+        evaluation = self.service.evaluation()
+        catalog = evaluation["model_catalog"]
+        self.assertEqual([item["id"] for item in catalog], list(evaluation["model_labels"]))
         self.assertEqual(len(catalog), 3)
         for item in catalog:
             for key in ("label", "role", "how", "inputs", "purpose"):
                 self.assertTrue(item[key].strip(), f"{item['id']} {key}")
-        for target in self.service.evaluation()["targets"]:
+        for target in evaluation["targets"]:
             for row in target["metrics"]:
                 for key in ("mae", "rmse", "smape", "mase", "directional_accuracy"):
                     self.assertTrue(math.isfinite(row[key]), f"{target['id']} {row['model']} {key}")
+
+    def test_pipeline_anfis_predicts_next_quarter_without_same_period_leakage(self) -> None:
+        target = self.service.evaluation()["targets"][0]
+        rows = target["predictions"]["validation"] + target["predictions"]["test"]
+        periods = list(self.service.bundle.fuzzy_indices.index.astype(str))
+        for row in rows:
+            target_index = periods.index(row["period"])
+            self.assertEqual(row["input_period"], periods[target_index - 1])
+            self.assertNotEqual(row["input_period"], row["period"])
+
+        anfis_metrics = [row for row in target["metrics"] if row["model"] == "anfis"]
+        self.assertTrue(all(row["rmse"] > 1e-9 for row in anfis_metrics))
 
     def test_scenario_directions_are_plausible(self) -> None:
         safety = self.service.simulate("custom", custom_impulses={"safety_budget_execution": 1.0})
@@ -112,6 +125,17 @@ class ModelTests(unittest.TestCase):
         transit = self.service.simulate("custom", custom_impulses={"transit_budget_execution": 1.0})
         self.assertGreater(transit["scenario_result"][-1]["regularity"], transit["baseline"][-1]["regularity"])
         self.assertGreater(transit["scenario_result"][-1]["accessibility"], transit["baseline"][-1]["accessibility"])
+
+    def test_customer_index_values_update_accessibility_forecast(self) -> None:
+        baseline_value = float(self.service.bundle.fuzzy_indices.iloc[-1]["accessible_environment"])
+        result = self.service.simulate(
+            "inertial",
+            index_values={"accessible_environment": min(100.0, baseline_value + 10.0)},
+        )
+        self.assertNotEqual(
+            result["scenario_result"][-1]["accessibility"],
+            result["baseline"][-1]["accessibility"],
+        )
 
         roads = self.service.simulate("custom", custom_impulses={"road_budget_execution": 1.0})
         self.assertGreater(roads["scenario_result"][-1]["accessibility"], roads["baseline"][-1]["accessibility"])
