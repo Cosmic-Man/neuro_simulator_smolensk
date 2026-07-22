@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import tracemalloc
 from threading import RLock
@@ -13,7 +14,7 @@ from pydantic import BaseModel, Field
 from .config import STATIC_DIR
 from .data import load_problem_b_data
 from .datasets import DatasetStore
-from .scenarios import export_payload, get_builtin, validate_scenario
+from .scenarios import ScenarioStore, builtin_items, export_payload, get_builtin, validate_scenario
 from .service import ProblemBService
 
 
@@ -25,6 +26,7 @@ class ScenarioPayload(BaseModel):
     mode: Literal["expert", "adapted"] = "adapted"
     horizon: int = Field(default=8, ge=1, le=20)
     impulses: dict[str, float] = Field(default_factory=dict)
+    index_values: dict[str, float] = Field(default_factory=dict)
 
 
 class SimulateRequest(BaseModel):
@@ -48,6 +50,7 @@ tracemalloc.start()
 _initialization_started = time.perf_counter()
 service = ProblemBService()
 dataset_store = DatasetStore()
+scenario_store = ScenarioStore()
 service_lock = RLock()
 INITIALIZATION_SECONDS = time.perf_counter() - _initialization_started
 _, INITIALIZATION_PEAK_BYTES = tracemalloc.get_traced_memory()
@@ -232,7 +235,7 @@ def evaluation() -> dict[str, object]:
 
 @app.get("/api/scenarios")
 def scenarios() -> dict[str, object]:
-    return {"scenarios": service.scenarios()}
+    return {"scenarios": builtin_items() + scenario_store.items()}
 
 
 @app.post("/api/scenarios/validate")
@@ -243,11 +246,21 @@ def validate_scenario_payload(payload: ScenarioPayload) -> dict[str, object]:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
+@app.post("/api/scenarios", status_code=status.HTTP_201_CREATED)
+def save_scenario(payload: ScenarioPayload) -> dict[str, object]:
+    if get_builtin(payload.id) is not None:
+        raise HTTPException(status_code=409, detail="Нельзя перезаписать встроенный сценарий")
+    try:
+        return scenario_store.save(payload.model_dump())
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
 @app.get("/api/scenarios/{reference}/export")
 def export_scenario(reference: str) -> JSONResponse:
-    scenario = get_builtin(reference)
+    scenario = get_builtin(reference) or scenario_store.get(reference)
     if scenario is None:
-        raise HTTPException(status_code=404, detail="Неизвестный встроенный сценарий")
+        raise HTTPException(status_code=404, detail="Сценарий не найден")
     return JSONResponse(
         export_payload(scenario),
         headers={"Content-Disposition": f'attachment; filename="{scenario["id"]}.json"'},

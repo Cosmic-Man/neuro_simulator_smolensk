@@ -16,6 +16,7 @@
 !/runtime/scenarios/
 /runtime/scenarios/*
 !/runtime/scenarios/*.json
+!/runtime/scenarios/README.md
 .env
 .env.*
 *.env

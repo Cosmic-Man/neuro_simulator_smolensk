@@ -238,6 +238,7 @@ input[type="range"] { width: 100%; accent-color: var(--teal); }
 .scenario-upload input[type="file"] { min-width: 0; color: var(--muted); font-size: 12px; }
 .scenario-upload .mini-button { padding: 8px 10px; }
 .scenario-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.scenario-actions input { flex: 1 1 180px; min-width: 0; }
 .advanced-settings { margin: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .advanced-settings > summary, .dataset-field-details > summary, .dataset-preview-card > summary { padding: 13px 0; color: var(--teal); font-size: 14px; font-weight: 800; cursor: pointer; }
 .advanced-settings[open] > summary, .dataset-field-details[open] > summary { margin-bottom: 4px; }

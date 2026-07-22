@@ -1033,7 +1033,11 @@ class ProblemBService:
         scenario_initial = initial.copy()
         node_positions = {spec.id: index for index, spec in enumerate(NODE_SPECS)}
         fuzzy_latest = self.bundle.fuzzy_indices.iloc[-1]
-        for index_id, value in (index_values or {}).items():
+        effective_index_values = {
+            **dict(scenario.get("index_values", {})),
+            **dict(index_values or {}),
+        }
+        for index_id, value in effective_index_values.items():
             if index_id not in INDEX_CONTROL_NODES:
                 raise ValueError(f"Индекс {index_id} нельзя изменять в лаборатории")
             numeric = float(value)

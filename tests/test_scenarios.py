@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 
-from app.scenarios import builtin_items, export_payload, validate_scenario
+from app.scenarios import ScenarioStore, builtin_items, export_payload, validate_scenario
 
 
 class ScenarioTests(unittest.TestCase):
@@ -16,6 +17,7 @@ class ScenarioTests(unittest.TestCase):
             "mode": "adapted",
             "horizon": 8,
             "impulses": {"road_repair": 0.1},
+            "index_values": {"accessible_environment": 72.5},
         }
 
     def test_builtin_catalog_is_available_without_storage(self) -> None:
@@ -34,6 +36,13 @@ class ScenarioTests(unittest.TestCase):
         payload["impulses"] = {"road_repair": 1.01}
         with self.assertRaises(ValueError):
             validate_scenario(payload)
+
+    def test_scenario_store_persists_json_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ScenarioStore(directory)
+            saved = store.save(self.payload())
+            self.assertEqual(store.get(saved["id"]), saved)
+            self.assertEqual(store.items(), [saved])
 
 
 if __name__ == "__main__":

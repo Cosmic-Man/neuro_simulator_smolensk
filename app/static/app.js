@@ -723,6 +723,10 @@ function applySelectedScenario() {
     input.value = state.baseImpulses[input.dataset.node] || 0;
     input.dispatchEvent(new Event("input"));
   });
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => {
+    input.value = scenario.index_values?.[input.dataset.index] ?? state.baseIndexValues[input.dataset.index];
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+  });
 }
 
 function resetSliders() {
@@ -751,7 +755,31 @@ function scenarioPayloadFromControls(scenario, overrides = {}) {
     mode: document.getElementById("scenarioMode").value,
     horizon: Number(document.getElementById("scenarioHorizon").value),
     impulses: scenarioImpulsesFromControls(),
+    index_values: indexValuesFromControls(),
   };
+}
+
+async function saveScenario() {
+  const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
+  if (!selected) return;
+  const nameInput = document.getElementById("scenarioSaveName");
+  const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  const isStored = !selected.builtin;
+  const label = nameInput.value.trim() || (isStored ? selected.label : `Пользовательский сценарий ${new Date().toLocaleString("ru-RU")}`);
+  const payload = scenarioPayloadFromControls(selected, {
+    id: isStored ? selected.id : `scenario-${timestamp}`,
+    label,
+    description: isStored ? selected.description : "Сценарий сохранён пользователем из лаборатории индексов.",
+  });
+  try {
+    const saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
+    const existingIndex = state.scenarios.findIndex(item => !item.builtin && item.id === saved.id);
+    if (existingIndex >= 0) state.scenarios.splice(existingIndex, 1, saved);
+    else state.scenarios.push(saved);
+    nameInput.value = "";
+    renderScenarioControls(saved.id);
+    showToast(`Сценарий «${saved.label}» сохранён в runtime/scenarios/${saved.id}.json`);
+  } catch (error) { showToast(error.message, true); }
 }
 
 async function uploadScenario() {
@@ -987,6 +1015,7 @@ function bindEvents() {
   document.getElementById("scenarioPreset").addEventListener("change", applySelectedScenario);
   document.getElementById("resetSliders").addEventListener("click", resetSliders);
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
+  document.getElementById("saveScenario").addEventListener("click", saveScenario);
   document.getElementById("exportScenario").addEventListener("click", exportSelectedScenario);
   document.getElementById("runScenario").addEventListener("click", runScenario);
   document.getElementById("customerObjective").addEventListener("change", () => {
