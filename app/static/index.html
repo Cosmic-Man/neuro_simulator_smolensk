@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Локальный нейросимулятор транспортной доступности и безопасности Смоленска">
   <title>Нейросимулятор Смоленска · Проблема Б</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260722-observer-method-card">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260722-customer-data">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260722-balanced-builtins"></script>
+  <script defer src="/assets/app.js?v=20260722-customer-data"></script>
 </head>
 <body>
   <section id="loginView" class="auth-view" hidden>
@@ -42,6 +42,7 @@
         <a href="#overview">Состояние</a>
         <a href="#models">Модели</a>
         <a href="#map">Карта</a>
+        <a href="#datasets">Данные</a>
       </div>
       <div class="topbar-actions">
         <div id="apiStatus" class="status-pill"><span></span>Подключение…</div>
@@ -76,6 +77,16 @@
   </header>
 
   <main class="shell">
+    <section class="decision-path panel" aria-label="Как заказчику работать с системой">
+      <div><span class="panel-kicker">Маршрут заказчика</span><h2>От проблемного показателя к проверяемому решению</h2></div>
+      <ol>
+        <li><strong>1. Выберите цель</strong><span>Укажите, что требуется улучшить, и получите пять приоритетных мер.</span></li>
+        <li><strong>2. Проверьте сценарий</strong><span>Запустите прогноз и сравните проценты с инерционным вариантом.</span></li>
+        <li><strong>3. Сверьте ресурсы</strong><span>Посмотрите, какое бюджетное направление сильнее влияет на цель.</span></li>
+        <li><strong>4. Уточните данные</strong><span>Выберите XLSX, проверьте строки и при наличии прав внесите новый квартал.</span></li>
+      </ol>
+    </section>
+
     <section id="overview" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">01</span><h2>Состояние на последний квартал</h2></div>
@@ -122,27 +133,27 @@
     <section id="indices" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">03</span><h2>Нечёткие и экспертные индексы</h2></div>
-        <p>Восемь нечётких свёрток и единый иерархический baseline Гульдар</p>
+        <p>Восемь нечётких свёрток и итоговый индекс из Pipeline.ipynb</p>
       </div>
       <div id="fuzzyIndexCards" class="index-grid"></div>
       <div id="hierarchicalIndexCard" class="hierarchical-index-summary"></div>
       <article class="panel fuzzy-source-panel">
         <span class="panel-kicker">Исходные данные</span>
         <h3>Столбцы датасета для восьми нечётких индексов</h3>
-        <p class="chart-description">Под каждым индексом перечислены точные технические имена столбцов исходного Excel-датасета. Перед нечёткой свёрткой значения нормализуются по обучающему периоду и приводятся к шкале качества от 0 до 100.</p>
+        <p class="chart-description">Под каждым индексом перечислены точные имена столбцов Excel. Функции принадлежности применяются в исходных диапазонах Pipeline; только шесть показателей предварительно преобразуются через log1p.</p>
         <div id="fuzzySourceList" class="fuzzy-source-list"></div>
       </article>
       <div class="source-grid index-analysis">
         <article class="panel chart-panel">
           <div class="panel-toolbar"><div><span class="panel-kicker">Динамика</span><h3>Частные индексы</h3></div><label>Индекс<select id="fuzzyIndexSelect"></select></label></div>
           <p class="chart-description">
-            График показывает поквартальную динамику выбранного частного нечёткого индекса и сопоставляет её с интегральной оценкой Гульдар. Бирюзовая линия отражает выбранный в списке частный индекс, а коралловая — иерархический индекс, объединяющий все восемь нечётких индексов. Все значения приведены к единой шкале от 0 до 100 баллов: более высокий уровень соответствует более благоприятному состоянию городской мобильности. Совпадающее направление линий указывает на общий системный тренд, а заметное расхождение помогает увидеть периоды, когда изменение отдельной сферы не совпадало с динамикой комплексной оценки.
+            График показывает динамику выбранного частного индекса и итоговой линейной свёртки Pipeline. Бирюзовая линия — выбранное направление, коралловая — взвешенный результат всех восьми индексов. Более высокое значение соответствует более благоприятной оценке.
           </p>
           <div id="fuzzyIndexPlot" class="plot" aria-label="Поквартальное сравнение выбранного частного индекса с иерархическим индексом Гульдар"></div>
         </article>
         <article class="panel contribution-panel">
-          <span class="panel-kicker">8 нечётких индексов → один baseline</span>
-          <h3>Иерархический индекс Гульдар</h3>
+          <span class="panel-kicker">8 нечётких индексов → одна цель</span>
+          <h3>Итоговый индекс Pipeline</h3>
           <div id="hierarchicalStats" class="index-stat-grid"></div>
           <div id="hierarchicalContributions" class="contribution-list"></div>
         </article>
@@ -152,16 +163,21 @@
     <section id="models" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">04</span><h2>Сравнение моделей</h2></div>
-        <p>Тест 2023Q1–2025Q4 не участвует в обучении и настройке</p>
+        <p>Сравнение ANFIS с двумя baseline строго по Pipeline.ipynb</p>
       </div>
       <div class="panel chart-panel">
         <div class="panel-toolbar toolbar-wrap">
-          <div><span class="panel-kicker">Прогноз на один квартал</span><h3>Факт и прогнозы</h3></div>
+          <div><span class="panel-kicker">Целевая переменная Pipeline</span><h3>Факт и расчёты моделей</h3></div>
           <div class="control-row">
             <label>Цель<select id="evaluationTarget"></select></label>
             <label>Выборка<select id="evaluationSplit"><option value="test">Тест</option><option value="validation">Валидация</option></select></label>
           </div>
         </div>
+        <div class="model-guide-intro">
+          <span class="panel-kicker">Что именно сравнивается</span>
+          <p>Baseline — это простой контрольный ориентир. Pipeline сравнивает ANFIS с сезонным повтором и Ridge-регрессией на лаговых признаках.</p>
+        </div>
+        <div id="modelGuide" class="model-guide" aria-label="Описание сравниваемых моделей и baseline"></div>
         <div id="evaluationPlot" class="plot plot-large" aria-label="Сравнение прогнозов"></div>
         <div class="table-wrap">
           <table>
@@ -169,6 +185,11 @@
             <tbody id="metricsBody"></tbody>
           </table>
         </div>
+      </div>
+      <div class="model-technical-heading">
+        <span class="panel-kicker">Техническая проверка ANFIS</span>
+        <h3>Одна модель, восемь входов и шесть правил</h3>
+        <p>Настройки перенесены из Pipeline.ipynb: RobustScaler, шесть гауссовых правил, Adam и ранняя остановка.</p>
       </div>
       <div id="anfisCards" class="model-grid"></div>
     </section>
@@ -234,6 +255,15 @@
               <article class="panel business-kpi-placeholder">Запустите сценарий для расчёта эффекта</article>
             </div>
           </section>
+          <article class="panel recommendations-panel">
+            <div class="panel-toolbar toolbar-wrap">
+              <div><span class="panel-kicker">Что улучшать в первую очередь</span><h3>Пять предложений для выбранной цели</h3></div>
+              <label>Цель улучшения<select id="recommendationObjective"></select></label>
+            </div>
+            <div id="recommendationStatus" class="recommendation-status">Запустите расчёт — система оценит текущее положение и предложит пять мер.</div>
+            <ol id="recommendationList" class="recommendation-list"></ol>
+            <p id="recommendationMethodology" class="methodology-note"></p>
+          </article>
           <article id="budgetPanel" class="panel budget-panel">
             <div class="panel-toolbar">
               <div><span class="panel-kicker">Куда направить ресурсы</span><h3>Модельные бюджетные приоритеты</h3></div>
@@ -275,9 +305,86 @@
       </div>
     </section>
 
+    <section id="analysis" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">08</span><h2>Анализ данных Pipeline</h2></div>
+        <p>Выбросы, функции принадлежности и итоговая свёртка из основного notebook</p>
+      </div>
+      <div id="pipelineStats" class="analysis-stat-grid"></div>
+      <div class="analysis-grid">
+        <article class="panel chart-panel analysis-wide">
+          <div class="panel-toolbar toolbar-wrap">
+            <div><span class="panel-kicker">Коробки с усами</span><h3>Распределение и выбросы</h3></div>
+            <label>Группа<select id="boxplotGroup"></select></label>
+          </div>
+          <p class="chart-description">Коробка показывает типичный диапазон значений, линия внутри — медиану, а отдельные точки — нетипичные наблюдения. Это помогает заказчику увидеть, где единичное значение может исказить общий вывод.</p>
+          <div id="boxplotPlot" class="plot analysis-plot" aria-label="Коробки с усами для показателей Pipeline"></div>
+          <div id="outlierSummary" class="analysis-note"></div>
+        </article>
+
+        <article class="panel chart-panel analysis-wide">
+          <div class="panel-toolbar toolbar-wrap">
+            <div><span class="panel-kicker">Нечёткая оценка</span><h3>Треугольные функции Pipeline</h3></div>
+            <div class="control-row">
+              <label>Индекс<select id="membershipIndex"></select></label>
+              <label>Показатель<select id="membershipVariable"></select></label>
+            </div>
+          </div>
+          <p class="chart-description">Линии показывают плавный переход между оценками «низко», «средне» и «высоко». Благодаря перекрытию соседних областей небольшое изменение показателя не вызывает резкого скачка итогового индекса.</p>
+          <div id="membershipPlot" class="plot analysis-plot" aria-label="Функции принадлежности Pipeline"></div>
+        </article>
+
+        <article class="panel chart-panel">
+          <span class="panel-kicker">Форма оценки</span>
+          <h3>Треугольник и трапеция</h3>
+          <p id="membershipReferenceNote" class="chart-description"></p>
+          <div id="membershipReferencePlot" class="plot reference-plot" aria-label="Сравнение треугольной и трапециевидной функций"></div>
+        </article>
+
+        <article class="panel chart-panel">
+          <span class="panel-kicker">Итог Pipeline</span>
+          <h3>Линейная свёртка восьми индексов</h3>
+          <p class="chart-description">Чем выше вес, тем сильнее соответствующее направление влияет на итоговую оценку. Веса нормированы и в сумме дают 100%.</p>
+          <div id="pipelineWeightsPlot" class="plot reference-plot" aria-label="Веса итогового индекса Pipeline"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="datasets" class="section-block">
+      <div class="section-heading">
+        <div><span class="section-index">09</span><h2>Данные для расчёта</h2></div>
+        <p>Выбор XLSX, проверка кварталов и добавление новых наблюдений</p>
+      </div>
+      <div class="dataset-layout">
+        <article class="panel dataset-selector-card">
+          <span class="panel-kicker">Источник расчёта</span><h3>Какой датасет использовать</h3>
+          <p class="chart-description">Активный файл определяет все показатели, графики и рекомендации. Выбор применяется ко всей текущей демонстрации.</p>
+          <label>Файл из datasets_ready<select id="datasetSelect"></select></label>
+          <button id="activateDataset" class="primary-button role-editor" type="button">Использовать для расчёта</button>
+          <div id="datasetSummary" class="dataset-summary"></div>
+        </article>
+        <article class="panel dataset-editor-card">
+          <div class="panel-toolbar toolbar-wrap">
+            <div><span class="panel-kicker">Редактор квартала</span><h3>Проверить или изменить 31 показатель</h3></div>
+            <label>Строка<select id="datasetRowSelect"></select></label>
+          </div>
+          <p id="datasetEditorHint" class="chart-description">Выберите квартал. Пользователь и администратор могут сохранить изменения или добавить следующую строку; наблюдатель видит данные без редактирования.</p>
+          <div class="dataset-actions role-editor">
+            <button id="newDatasetRow" class="mini-button" type="button">Новая строка с нулями</button>
+            <button id="saveDatasetRow" class="primary-button" type="button">Сохранить строку</button>
+          </div>
+          <div id="datasetFields" class="dataset-fields"></div>
+        </article>
+      </div>
+      <article class="panel dataset-preview-card">
+        <span class="panel-kicker">Быстрая проверка</span><h3>Последние строки выбранного файла</h3>
+        <div class="table-wrap"><table><thead id="datasetPreviewHead"></thead><tbody id="datasetPreviewBody"></tbody></table></div>
+      </article>
+    </section>
+
     <section id="adminPanel" class="section-block" hidden>
       <div class="section-heading">
-        <div><span class="section-index">08</span><h2>Администрирование</h2></div>
+        <div><span class="section-index">10</span><h2>Администрирование</h2></div>
         <p>Пользователи, роли и журнал действий демонстрационного проекта</p>
       </div>
       <div class="admin-grid">
@@ -305,7 +412,7 @@
 
   <footer class="shell footer">
     <span>Локальный прототип · проблема Б</span>
-    <span class="observer-hidden">Нормализация обучена только на train · <a href="/docs" target="_blank" rel="noreferrer">API</a></span>
+    <span class="observer-hidden">Основа расчётов: Pipeline.ipynb · <a href="/docs" target="_blank" rel="noreferrer">API</a></span>
   </footer>
   </div>
 

@@ -8,10 +8,22 @@ import numpy as np
 import pandas as pd
 
 from .config import ANFIS_MODEL_DIR, DEFAULT_HORIZON, IMPULSE_LIMIT, TEST_END, TRAIN_END, VALIDATION_END
-from .data import DataBundle, NODE_IDS, NODE_SPECS, load_problem_b_data
+from .data import DataBundle, FEATURE_DIRECTIONS, NODE_IDS, NODE_SPECS, load_problem_b_data
 from .fcm import EXPERT_EDGES, WeightSet, build_weight_set, fcm_forecast, fcm_step, graph_payload, impulse_vector, next_period
 from .fuzzy import FUZZY_INDEX_SPECS
-from .models import ANFIS, ModelArtifactError, RidgeRegressor, SampleSet, build_lag_samples, build_one_step_samples, metric_set, split_mask
+from .models import (
+    ANFIS,
+    ModelArtifactError,
+    PipelineANFIS,
+    RidgeRegressor,
+    RobustScaler,
+    SampleSet,
+    build_lag_samples,
+    build_one_step_samples,
+    metric_set,
+    split_mask,
+    smape,
+)
 from .scenarios import builtin_items, get_builtin
 
 
@@ -53,11 +65,75 @@ TARGETS = {
 }
 
 MODEL_LABELS = {
-    "seasonal_naive": "Seasonal Naive",
-    "ridge": "Ridge по четырём лагам",
-    "fcm_expert": "FCM экспертная",
-    "fcm_adapted": "FCM адаптированная",
-    "anfis": "ANFIS",
+    "seasonal_naive": "Seasonal Naive — сезонный повтор",
+    "ridge": "Ridge Regression — лаговые признаки",
+    "anfis": "ANFIS — 6 нечётких правил",
+}
+
+MODEL_CATALOG = {
+    "seasonal_naive": {
+        "role": "Простой сезонный baseline",
+        "how": "Прогноз следующего квартала равен фактическому значению того же квартала год назад.",
+        "inputs": "Только целевой показатель с лагом 4 квартала; городские факторы не используются.",
+        "purpose": "Минимальный ориентир: сложная модель должна быть полезнее простого повторения прошлого года.",
+    },
+    "ridge": {
+        "role": "Линейный статистический baseline",
+        "how": "Использует лаги 1, 2 и 4 квартала и среднее за четыре предыдущих квартала.",
+        "inputs": "Нормализованный итоговый индекс Pipeline; коэффициенты обучаются только на train.",
+        "purpose": "Показывает качество линейной модели временного ряда до применения ANFIS.",
+    },
+    "anfis": {
+        "role": "Основная модель Pipeline",
+        "how": "Объединяет шесть гауссовых правил Сугено и линейные выводы правил; параметры обучаются Adam.",
+        "inputs": "Все восемь нечётких индексов текущего периода после RobustScaler.",
+        "purpose": "Воспроизводит нелинейную модель из Pipeline.ipynb и сравнивается с двумя простыми baseline.",
+    },
+}
+
+NODE_ACTIONS = {
+    "road_budget_execution": "Повысить фактическое исполнение дорожной программы и перенести средства на готовые к реализации работы.",
+    "transit_budget_execution": "Ускорить финансирование перевозчиков, выпуска транспорта и диспетчерского управления.",
+    "safety_budget_execution": "Направить ресурсы на парковки, разметку, освещение и мероприятия безопасности движения.",
+    "road_repair": "Увеличить объём ремонта на участках, которые сильнее всего ограничивают движение и безопасность.",
+    "road_condition": "Приоритизировать доведение дорог до нормативного состояния, а не только локальный ремонт.",
+    "defect_response": "Сократить срок обнаружения и устранения дефектов через норматив реакции и контроль исполнения.",
+    "passenger_flow": "Поддержать востребованные маршруты и пересадки, чтобы рост пассажиропотока был устойчивым.",
+    "transport_regularity": "Стабилизировать интервалы и соблюдение расписания на проблемных маршрутах.",
+    "average_speed": "Убрать задержки на узких местах, настроить приоритет и координацию движения.",
+    "crossings": "Улучшить регулируемые переходы, освещение и организацию конфликтных точек.",
+    "congestion": "Снизить перегрузку сети управлением потоками, парковкой и маршрутами объезда.",
+}
+
+FUZZY_FEATURE_PRIORITY = {
+    "road_quality_dtc": (
+        "дороги_отремонт_км_A", "рейсы_расписание_pct_A", "скорость_магистрали_A_кмч",
+        "дтп_10тыс_A", "срок_устранения_деф_сут_A",
+    ),
+    "road_quality_transit": (
+        "дороги_отремонт_км_B", "рейсы_расписание_pct_B", "скорость_магистрали_B_кмч",
+        "дтп_10тыс_B", "срок_устранения_деф_сут_B",
+    ),
+}
+
+FUZZY_ADJACENT_NODES = {
+    "urban_environment": ("road_condition", "crossings"),
+    "road_wellbeing_dtc": ("road_repair", "defect_response"),
+    "accessible_environment": ("transport_regularity", "crossings"),
+    "public_spaces": ("crossings", "road_condition"),
+    "road_wellbeing_transit": ("road_repair", "defect_response"),
+    "parking_safety": ("crossings",),
+}
+
+FUZZY_RELATED_TARGET = {
+    "urban_environment": "integrated_mobility",
+    "road_quality_dtc": "traffic_safety",
+    "road_wellbeing_dtc": "transport_accessibility",
+    "accessible_environment": "transport_accessibility",
+    "public_spaces": "integrated_mobility",
+    "road_quality_transit": "transport_regularity",
+    "road_wellbeing_transit": "transport_regularity",
+    "parking_safety": "traffic_safety",
 }
 
 
@@ -78,8 +154,9 @@ class ProblemBService:
         self._train_models()
         self.weights: WeightSet = build_weight_set(self.bundle.factors, self.anfis_effects)
         self._prediction_cache = {target_id: self._prediction_lookups(target_id) for target_id in TARGETS}
-        self._evaluation = self._build_evaluation()
+        self._evaluation = self._build_pipeline_evaluation()
         self._sensitivity_cache = self._build_sensitivity("adapted")
+        self._recommendations_cache = self._build_improvement_recommendations()
 
     def _train_models(self) -> None:
         for target_id, config in TARGETS.items():
@@ -223,6 +300,149 @@ class ProblemBService:
                 output[model][period] = float((safety / 100.0 + regularity_factor + accessibility / 100.0) / 3.0 * 100.0)
         return output
 
+    @staticmethod
+    def _pipeline_metric_set(
+        actual: np.ndarray,
+        predicted: np.ndarray,
+        train_values: np.ndarray,
+        previous: np.ndarray,
+        *,
+        mase_period: int,
+    ) -> dict[str, float]:
+        errors = np.asarray(predicted, dtype=float) - np.asarray(actual, dtype=float)
+        scale = float(np.mean(np.abs(train_values[mase_period:] - train_values[:-mase_period])))
+        if scale < 1e-12:
+            scale = 1.0
+        return {
+            "mae": float(np.mean(np.abs(errors))),
+            "rmse": float(np.sqrt(np.mean(errors**2))),
+            "smape": smape(np.asarray(actual), np.asarray(predicted)),
+            "mase": float(np.mean(np.abs(errors)) / scale),
+            "directional_accuracy": float(
+                np.mean(np.sign(np.asarray(actual) - previous) == np.sign(np.asarray(predicted) - previous))
+            ),
+        }
+
+    def _build_pipeline_evaluation(self) -> dict[str, Any]:
+        feature_names = [spec.id for spec in FUZZY_INDEX_SPECS]
+        periods = self.bundle.fuzzy_indices.index.to_numpy(dtype=str)
+        x_raw = self.bundle.fuzzy_indices.loc[:, feature_names].to_numpy(dtype=float)
+        y_raw = self.bundle.raw["pipeline_target"].to_numpy(dtype=float)
+        train_mask = periods <= TRAIN_END
+        validation_mask = (periods >= "2019Q1") & (periods <= VALIDATION_END)
+
+        self.pipeline_x_scaler = RobustScaler().fit(x_raw[train_mask])
+        self.pipeline_y_scaler = RobustScaler().fit(y_raw[train_mask, None])
+        x_scaled = self.pipeline_x_scaler.transform(x_raw)
+        y_scaled = self.pipeline_y_scaler.transform(y_raw[:, None]).reshape(-1)
+        self.pipeline_anfis = PipelineANFIS(feature_names).fit(
+            x_scaled[train_mask],
+            y_scaled[train_mask],
+            x_scaled[validation_mask],
+            y_scaled[validation_mask],
+        )
+        anfis_prediction = self.pipeline_anfis.predict(x_scaled)
+
+        lagged = np.full((len(y_scaled), 4), np.nan, dtype=float)
+        for index in range(4, len(y_scaled)):
+            lagged[index] = (
+                y_scaled[index - 1],
+                y_scaled[index - 2],
+                y_scaled[index - 4],
+                float(np.mean(y_scaled[index - 4:index])),
+            )
+        ridge_train = train_mask & np.isfinite(lagged).all(axis=1)
+        ridge_x = lagged[ridge_train]
+        ridge_y = y_scaled[ridge_train]
+        ridge_x_mean = ridge_x.mean(axis=0)
+        ridge_y_mean = float(ridge_y.mean())
+        ridge_centered = ridge_x - ridge_x_mean
+        ridge_coef = np.linalg.solve(
+            ridge_centered.T @ ridge_centered + np.eye(ridge_centered.shape[1]),
+            ridge_centered.T @ (ridge_y - ridge_y_mean),
+        )
+        ridge_prediction = np.full(len(y_scaled), np.nan, dtype=float)
+        valid_lags = np.isfinite(lagged).all(axis=1)
+        ridge_prediction[valid_lags] = (
+            ridge_y_mean + (lagged[valid_lags] - ridge_x_mean) @ ridge_coef
+        )
+
+        prediction_rows: dict[str, list[dict[str, Any]]] = {}
+        metric_rows: list[dict[str, Any]] = []
+        train_values = y_scaled[train_mask]
+        for split in ("validation", "test"):
+            mask = split_mask(periods, split)
+            selected = np.flatnonzero(mask)
+            split_start = int(selected[0])
+            history = y_scaled[:split_start]
+            seasonal_values: list[float] = []
+            for offset in range(len(selected)):
+                history_index = len(history) - 4 + offset
+                if history_index < len(history):
+                    seasonal_values.append(float(history[history_index]))
+                else:
+                    seasonal_values.append(seasonal_values[history_index - len(history)])
+            predictions_by_model = {
+                "seasonal_naive": np.asarray(seasonal_values),
+                "ridge": ridge_prediction[mask],
+                "anfis": anfis_prediction[mask],
+            }
+            rows = []
+            for position, index in enumerate(selected):
+                rows.append(
+                    {
+                        "period": periods[index],
+                        "actual": round(float(y_scaled[index]), 6),
+                        **{
+                            model: round(float(values[position]), 6)
+                            for model, values in predictions_by_model.items()
+                        },
+                    }
+                )
+            prediction_rows[split] = rows
+            actual = y_scaled[mask]
+            previous = y_scaled[np.maximum(selected - 1, 0)]
+            for model, values in predictions_by_model.items():
+                metrics = self._pipeline_metric_set(
+                    actual,
+                    values,
+                    ridge_y if model == "ridge" else train_values,
+                    previous,
+                    mase_period=4 if model == "seasonal_naive" else 1,
+                )
+                metric_rows.append(
+                    {
+                        "model": model,
+                        "model_label": MODEL_LABELS[model],
+                        "split": split,
+                        **{name: round(value, 6) for name, value in metrics.items()},
+                    }
+                )
+
+        target = {
+            "id": "pipeline_target",
+            "label": "Итоговый индекс Pipeline",
+            "unit": "нормализованное значение",
+            "metrics": metric_rows,
+            "predictions": prediction_rows,
+        }
+        return {
+            "targets": [target],
+            "sensitivity_targets": [
+                {"id": target_id, "label": config.label}
+                for target_id, config in TARGETS.items()
+            ] + [{"id": "integrated_mobility", "label": "Итоговый индекс безопасности и мобильности"}],
+            "model_labels": MODEL_LABELS,
+            "model_catalog": [
+                {"id": model_id, "label": label, **MODEL_CATALOG[model_id]}
+                for model_id, label in MODEL_LABELS.items()
+            ],
+            "note": (
+                "Pipeline.ipynb: train до 2018 года (51 строка после удаления выброса), "
+                "validation 2019–2022 (16), test 2023–2025 (12). Метрики показаны после RobustScaler."
+            ),
+        }
+
     def _build_evaluation(self) -> dict[str, Any]:
         targets = [
             self._evaluate_target(
@@ -246,53 +466,73 @@ class ProblemBService:
         return {
             "targets": targets,
             "model_labels": MODEL_LABELS,
+            "model_catalog": [
+                {"id": model_id, "label": label, **MODEL_CATALOG[model_id]}
+                for model_id, label in MODEL_LABELS.items()
+            ],
             "note": "Обучение: 2006Q1–2018Q4; настройка ANFIS: 2019Q1–2022Q4; test 2023Q1–2025Q4 не используется при настройке.",
         }
 
     def metadata(self) -> dict[str, Any]:
         anfis = [
             {
-                "target": target_id,
-                "inputs": model.feature_names,
-                "rule_count": model.rule_count,
-                "sigma": model.sigma_,
-                "ridge": model.ridge_,
-                "validation_rmse": model.validation_rmse_,
-                "source": self.anfis_model_sources[target_id],
+                "target": "pipeline_target",
+                "inputs": self.pipeline_anfis.feature_names,
+                "rule_count": self.pipeline_anfis.rule_count,
+                "sigma": float(np.mean(self.pipeline_anfis.sigmas_)),
+                "epochs": self.pipeline_anfis.trained_epochs_,
+                "validation_rmse": self.pipeline_anfis.validation_rmse_,
+                "source": "trained_from_pipeline",
             }
-            for target_id, model in self.anfis_models.items()
         ]
         return {
             "project": "Транспортная доступность и безопасность городской мобильности Смоленска",
             "problem": "Б",
             "source": self.bundle.source_path.name,
-            "dataset": {"rows": len(self.bundle.features), "features": len(self.bundle.features.columns), "sheet": "Лист1", "header_rows": 2},
+            "canonical_notebook": "colab/colab_kirill/Pipeline.ipynb",
+            "dataset": {
+                "source_rows": len(self.bundle.source_features),
+                "rows": len(self.bundle.features),
+                "features": len(self.bundle.features.columns),
+                "sheet": "Лист1",
+                "header_rows": 2,
+                "excluded_outliers": self.bundle.outlier_periods,
+            },
             "features": self.bundle.feature_metadata,
-            "period": {"start": self.bundle.raw.index[0], "end": TEST_END, "quarters": len(self.bundle.raw)},
+            "period": {"start": self.bundle.raw.index[0], "end": self.bundle.raw.index[-1], "quarters": len(self.bundle.raw)},
             "splits": {
-                "train": {"start": self.bundle.raw.index[0], "end": TRAIN_END, "quarters": 52},
+                "train": {"start": self.bundle.raw.index[0], "end": TRAIN_END, "quarters": 51},
                 "validation": {"start": "2019Q1", "end": VALIDATION_END, "quarters": 16},
                 "test": {"start": "2023Q1", "end": TEST_END, "quarters": 12},
             },
             "fcm": {"nodes": len(NODE_IDS), "edges": len(EXPERT_EDGES), "alpha": 0.35, "lambda": 1.3, "blend": "0.70 × expert + 0.30 × data"},
             "nodes": [spec.__dict__ for spec in NODE_SPECS],
-            "targets": [config.__dict__ for config in TARGETS.values()] + [{"id": "integrated_mobility", "label": "Итоговый индекс безопасности и мобильности", "unit": "баллы из 100"}],
+            "targets": [config.__dict__ for config in TARGETS.values()] + [
+                {"id": "integrated_mobility", "label": "Итоговый индекс безопасности и мобильности", "unit": "баллы из 100"},
+                {"id": "pipeline_target", "label": "Итоговый индекс Pipeline", "unit": "баллы из 100"},
+            ],
             "scenarios": builtin_items(),
-            "fuzzy_indices": [{"id": spec.id, "label": spec.label, "rules": len(spec.rule_table)} for spec in FUZZY_INDEX_SPECS],
+            "fuzzy_indices": [{"id": spec.id, "label": spec.label, "rules": spec.rule_count} for spec in FUZZY_INDEX_SPECS],
             "anfis": anfis,
             "proxies": [{"id": "digital_mobility", "description": "Прямого ряда цифровизации нет; сценарий воздействует на регулярность, скорость и загруженность."}],
         }
 
     def history(self) -> dict[str, Any]:
         periods = self.bundle.raw.index.to_list()
-        split = ["train" if period <= TRAIN_END else "validation" if period <= VALIDATION_END else "test" for period in periods]
+        split = [
+            "train" if period <= TRAIN_END else
+            "validation" if period <= VALIDATION_END else
+            "test" if period <= TEST_END else
+            "new_data"
+            for period in periods
+        ]
         definitions = [
             ("traffic_safety", "Безопасность движения", "баллы", "target"),
             ("accidents", "ДТП на 10 тыс. жителей", "ДТП на 10 тыс.", "indicator"),
             ("regularity", "Рейсы по расписанию", "%", "target"),
             ("accessibility", "Транспортная доступность", "баллы", "target"),
             ("integrated_mobility", "Итоговый индекс мобильности", "баллы", "target"),
-            ("hierarchical_fuzzy_index", "Иерархический экспертный индекс Гульдар", "баллы", "baseline"),
+            ("pipeline_target", "Итоговый индекс Pipeline", "баллы", "target"),
             ("avg_speed", "Средняя скорость", "км/ч", "indicator"),
             ("road_condition", "Дороги в нормативном состоянии", "%", "indicator"),
             ("road_repair", "Отремонтированные дороги", "км", "control"),
@@ -312,7 +552,7 @@ class ProblemBService:
                 "accessibility",
                 "traffic_safety",
                 "integrated_mobility",
-                "hierarchical_fuzzy_index",
+                "pipeline_target",
             )
         }
         latest["period"] = periods[-1]
@@ -321,7 +561,7 @@ class ProblemBService:
     def indices(self) -> dict[str, Any]:
         fuzzy_label_by_id = {spec.id: spec.label for spec in FUZZY_INDEX_SPECS}
         hierarchical_contributions = self.bundle.hierarchical_contributions.iloc[-1].drop("hierarchical_fuzzy_index")
-        hierarchical = self.bundle.raw["hierarchical_fuzzy_index"]
+        hierarchical = self.bundle.raw["pipeline_target"]
         return {
             "periods": self.bundle.raw.index.to_list(),
             "fuzzy": [
@@ -351,6 +591,104 @@ class ProblemBService:
                 for feature, value in hierarchical_contributions.sort_values(ascending=False).items()
             ],
             "hierarchical_weights": self.bundle.hierarchical_model.weights_table(fuzzy_label_by_id).to_dict(orient="records"),
+        }
+
+    def analysis(self) -> dict[str, Any]:
+        """Данные раздела EDA и функций принадлежности из Pipeline.ipynb."""
+        periods = self.bundle.source_features.index.astype(str).to_list()
+        metadata = {item["id"]: item for item in self.bundle.feature_metadata}
+        boxplots: list[dict[str, Any]] = []
+        for feature in self.bundle.source_features.columns:
+            values = self.bundle.source_features[feature].astype(float)
+            q1, median, q3 = values.quantile([0.25, 0.5, 0.75])
+            iqr = float(q3 - q1)
+            lower_limit = float(q1 - 1.5 * iqr)
+            upper_limit = float(q3 + 1.5 * iqr)
+            regular = values[(values >= lower_limit) & (values <= upper_limit)]
+            outlier_mask = (values < lower_limit) | (values > upper_limit)
+            item = metadata[feature]
+            boxplots.append(
+                {
+                    "id": feature,
+                    "label": item["label"],
+                    "group": item["group"],
+                    "values": [round(float(value), 6) for value in values],
+                    "stats": {
+                        "q1": round(float(q1), 6),
+                        "median": round(float(median), 6),
+                        "q3": round(float(q3), 6),
+                        "lower_whisker": round(float(regular.min()), 6),
+                        "upper_whisker": round(float(regular.max()), 6),
+                        "outlier_count": int(outlier_mask.sum()),
+                    },
+                    "outliers": [
+                        {"period": str(period), "value": round(float(value), 6)}
+                        for period, value in values[outlier_mask].items()
+                    ],
+                }
+            )
+
+        memberships = []
+        for spec in FUZZY_INDEX_SPECS:
+            variables = []
+            for feature, variable in zip(spec.features, spec.variables, strict=True):
+                variables.append(
+                    {
+                        "id": feature,
+                        "label": variable.name,
+                        "kind": "input",
+                        "universe": [variable.universe_min, variable.universe_max],
+                        "terms": [
+                            {"name": term.name, "type": term.mf_type, "params": list(term.params)}
+                            for term in variable.terms
+                        ],
+                    }
+                )
+            variables.append(
+                {
+                    "id": f"{spec.id}__output",
+                    "label": spec.output.name,
+                    "kind": "output",
+                    "universe": [spec.output.universe_min, spec.output.universe_max],
+                    "terms": [
+                        {"name": term.name, "type": term.mf_type, "params": list(term.params)}
+                        for term in spec.output.terms
+                    ],
+                }
+            )
+            memberships.append({"id": spec.id, "label": spec.label, "variables": variables})
+
+        return {
+            "source": "colab/colab_kirill/Pipeline.ipynb",
+            "periods": periods,
+            "source_rows": len(periods),
+            "processed_rows": len(self.bundle.features),
+            "excluded_outliers": self.bundle.outlier_periods,
+            "log1p_features": sorted(self.bundle.feature_scalers.keys() & {
+                "дворы_благоустроено_ед",
+                "пассажиропоток_тыс_A",
+                "пассажиропоток_тыс_B",
+                "дтп_10тыс_B",
+                "переходы_регулируем_ед_B",
+                "мероприятия_завершено_ед",
+            }),
+            "boxplots": boxplots,
+            "memberships": memberships,
+            "rule_files": sorted({spec.rule_filename for spec in FUZZY_INDEX_SPECS}),
+            "applied_rules": sum(spec.rule_count for spec in FUZZY_INDEX_SPECS),
+            "reference_memberships": {
+                "universe": [0.0, 1.0],
+                "terms": [
+                    {"name": "Треугольная", "type": "trimf", "params": [0.0, 0.5, 1.0]},
+                    {"name": "Трапециевидная", "type": "trapmf", "params": [0.0, 0.25, 0.75, 1.0]},
+                ],
+                "note": "В расчётах Pipeline используются треугольные функции; трапециевидная показана как поддерживаемая форма для экспертной настройки.",
+            },
+            "linear_weights": self.bundle.hierarchical_model.weights_table(
+                {spec.id: spec.label for spec in FUZZY_INDEX_SPECS}
+            ).to_dict(orient="records"),
+            "target": [round(float(value), 6) for value in self.bundle.raw["pipeline_target"]],
+            "target_periods": self.bundle.raw.index.astype(str).to_list(),
         }
 
     def fcm(self, mode: str) -> dict[str, object]:
@@ -407,6 +745,123 @@ class ProblemBService:
         for target_id in output:
             output[target_id].sort(key=lambda item: abs(item["delta_index_points"]), reverse=True)
         return output
+
+    @staticmethod
+    def _level_status(value: float) -> str:
+        if value < 40.0:
+            return "Низкий уровень — нужны первоочередные меры"
+        if value < 70.0:
+            return "Средний уровень — есть заметный резерв улучшения"
+        return "Устойчивый уровень — меры помогут закрепить результат"
+
+    def _build_improvement_recommendations(self) -> dict[str, Any]:
+        """Пять понятных управленческих действий для каждой цели заказчика."""
+        labels = {spec.id: spec.label for spec in NODE_SPECS}
+        objectives: list[dict[str, Any]] = []
+        target_values = {
+            "traffic_safety": float(self.bundle.raw.iloc[-1]["traffic_safety"]),
+            "transport_regularity": float(self.bundle.raw.iloc[-1]["regularity"]),
+            "transport_accessibility": float(self.bundle.raw.iloc[-1]["accessibility"]),
+            "integrated_mobility": float(self.bundle.raw.iloc[-1]["integrated_mobility"]),
+        }
+        target_labels = {
+            "traffic_safety": "Безопасность движения",
+            "transport_regularity": "Регулярность транспорта",
+            "transport_accessibility": "Транспортная доступность",
+            "integrated_mobility": "Сбалансированный результат",
+        }
+        for target_id, target_label in target_labels.items():
+            ranked = sorted(
+                self._sensitivity_cache[target_id],
+                key=lambda item: item["delta_index_points"],
+                reverse=True,
+            )[:5]
+            items = []
+            for rank, item in enumerate(ranked, start=1):
+                node = item["node"]
+                target_nodes = (
+                    ("traffic_safety", "transport_regularity", "transport_accessibility")
+                    if target_id == "integrated_mobility"
+                    else (TARGETS[target_id].factor_column,)
+                )
+                direct = any(abs(float(self.weights.adapted.loc[node, target])) > 1e-12 for target in target_nodes)
+                items.append(
+                    {
+                        "rank": rank,
+                        "factor": node,
+                        "label": labels[node],
+                        "action": NODE_ACTIONS.get(node, f"Улучшить направление «{labels[node]}» и закрепить ответственного."),
+                        "relation": "Прямое влияние" if direct else "Смежное влияние через связанные показатели",
+                        "expected_effect_points": round(float(item["delta_index_points"]), 4),
+                        "current_level": round(float(self.bundle.factors.iloc[-1][node]) * 100.0, 2),
+                    }
+                )
+            current = target_values[target_id]
+            objectives.append(
+                {
+                    "id": target_id,
+                    "label": target_label,
+                    "current": round(current, 2),
+                    "status": self._level_status(current),
+                    "items": items,
+                }
+            )
+
+        metadata = {item["id"]: item for item in self.bundle.feature_metadata}
+        for spec in FUZZY_INDEX_SPECS:
+            feature_ids = list(FUZZY_FEATURE_PRIORITY.get(spec.id, spec.features))[:5]
+            items = []
+            for feature in feature_ids:
+                item = metadata[feature]
+                improve = "Сократить" if FEATURE_DIRECTIONS[feature] < 0 else "Повысить"
+                items.append(
+                    {
+                        "factor": feature,
+                        "label": item["label"],
+                        "action": f"{improve} показатель «{item['label']}» в направлении «{item['group']}».",
+                        "relation": "Прямой вход JSON-правил этого индекса",
+                        "expected_effect_points": None,
+                        "current_level": round(float(self.bundle.source_features.loc[self.bundle.features.index[-1], feature]), 2),
+                    }
+                )
+            related_target = FUZZY_RELATED_TARGET[spec.id]
+            sensitivity = {item["node"]: item["delta_index_points"] for item in self._sensitivity_cache[related_target]}
+            for node in FUZZY_ADJACENT_NODES.get(spec.id, ()):
+                if len(items) >= 5:
+                    break
+                items.append(
+                    {
+                        "factor": node,
+                        "label": labels[node],
+                        "action": NODE_ACTIONS[node],
+                        "relation": "Смежный фактор FCM",
+                        "expected_effect_points": round(float(sensitivity.get(node, 0.0)), 4),
+                        "current_level": round(float(self.bundle.factors.iloc[-1][node]) * 100.0, 2),
+                    }
+                )
+            items = items[:5]
+            for rank, item in enumerate(items, start=1):
+                item["rank"] = rank
+            current = float(self.bundle.fuzzy_indices.iloc[-1][spec.id])
+            objectives.append(
+                {
+                    "id": spec.id,
+                    "label": spec.label,
+                    "current": round(current, 2),
+                    "status": self._level_status(current),
+                    "items": items,
+                }
+            )
+        if any(len(objective["items"]) != 5 for objective in objectives):
+            raise RuntimeError("Для каждой цели заказчика должно быть сформировано ровно пять рекомендаций")
+        return {
+            "period": str(self.bundle.features.index[-1]),
+            "objectives": objectives,
+            "methodology_note": (
+                "Первые четыре цели ранжируются по чувствительности FCM. Индексы Pipeline используют прямые входы "
+                "канонических JSON-правил и связанные факторы. Это приоритеты для обсуждения, а не автоматическое решение о расходах."
+            ),
+        }
 
     def simulate(
         self,
@@ -484,6 +939,7 @@ class ProblemBService:
             "explanation": explanations,
             "summary": summary,
             "budget_analysis": budget_analysis,
+            "improvement_recommendations": self._recommendations_cache,
         }
 
     @staticmethod

@@ -3,7 +3,12 @@
 /SOTs-EKONOM_RAZVITIE_GORODA_SMOLENSKA.xlsx
 /Document/*
 !/Document/ПЛАН_УЛУЧШЕНИЙ.md
-/colab/
+!/Document/PIPELINE_АРХИТЕКТУРА.md
+/colab/*
+!/colab/colab_kirill/
+/colab/colab_kirill/*
+!/colab/colab_kirill/Pipeline.ipynb
+!/colab/colab_kirill/*_rules.json
 /datasets/
 /runtime/
 .env

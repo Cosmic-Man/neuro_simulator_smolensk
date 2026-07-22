@@ -14,6 +14,8 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
       ANFIS_MODEL_DIR: /app/runtime/models
+      PIPELINE_RULE_DIR: ${PIPELINE_RULE_DIR:-colab/colab_kirill}
+      SMOLENSK_DATA_PATH: ${SMOLENSK_DATA_PATH:-/app/datasets_ready/smolensk_dataset_shared.xlsx}
     depends_on:
       postgres:
         condition: service_healthy
@@ -21,6 +23,7 @@ services:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     volumes:
       - model_cache:/app/runtime/models
+      - ./datasets_ready:/app/datasets_ready
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 10s

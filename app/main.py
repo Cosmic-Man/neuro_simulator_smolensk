@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import tracemalloc
 import uuid
+from threading import RLock
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -15,6 +16,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from .config import AUTO_CREATE_SCHEMA, SESSION_COOKIE_NAME, STATIC_DIR
 from .database import create_schema, get_db
+from .data import load_problem_b_data
+from .datasets import DatasetStore
 from .db_models import AuditLog, AuthSession, ScenarioShare, USER_ROLES, User, utcnow
 from .scenarios import ScenarioConflictError, ScenarioNotFoundError, ScenarioStore, export_payload
 from .security import (
@@ -88,12 +91,22 @@ class ResetPasswordPayload(BaseModel):
     must_change_password: bool = True
 
 
+class DatasetSelectPayload(BaseModel):
+    name: str
+
+
+class DatasetRowPayload(BaseModel):
+    values: dict[str, float]
+
+
 if AUTO_CREATE_SCHEMA:
     create_schema()
 
 tracemalloc.start()
 _initialization_started = time.perf_counter()
 service = ProblemBService()
+dataset_store = DatasetStore()
+service_lock = RLock()
 INITIALIZATION_SECONDS = time.perf_counter() - _initialization_started
 _, INITIALIZATION_PEAK_BYTES = tracemalloc.get_traced_memory()
 tracemalloc.stop()
@@ -107,6 +120,7 @@ app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 viewer_user = require_roles("observer", "user", "admin")
 scenario_editor = require_csrf_roles("user", "admin")
+dataset_editor = require_csrf_roles("user", "admin")
 scenario_sharing_viewer = require_roles("user", "admin")
 admin_editor = require_csrf_roles("admin")
 admin_viewer = require_roles("admin")
@@ -118,6 +132,16 @@ def scenario_error(error: Exception) -> HTTPException:
     if isinstance(error, ScenarioNotFoundError):
         return HTTPException(status_code=404, detail=str(error))
     return HTTPException(status_code=422, detail=str(error))
+
+
+def dataset_error(error: Exception) -> HTTPException:
+    if isinstance(error, FileNotFoundError):
+        return HTTPException(status_code=404, detail=str(error))
+    return HTTPException(status_code=422, detail=str(error))
+
+
+def rebuild_service(path) -> ProblemBService:
+    return ProblemBService(bundle=load_problem_b_data(path), model_dir=service.model_dir)
 
 
 @app.get("/", include_in_schema=False)
@@ -144,6 +168,7 @@ def health(response: Response, db: Session = Depends(get_db)) -> dict[str, objec
         "problem": "Б",
         "periods": len(service.bundle.raw),
         "features": len(service.bundle.features.columns),
+        "dataset": service.bundle.source_path.name,
         "models_ready": True,
         "initialization_seconds": round(INITIALIZATION_SECONDS, 4),
         "initialization_peak_mb": round(INITIALIZATION_PEAK_BYTES / 1024 / 1024, 2),
@@ -215,6 +240,83 @@ def history(_: User = Depends(viewer_user)) -> dict[str, object]:
 @app.get("/api/indices")
 def indices(_: User = Depends(viewer_user)) -> dict[str, object]:
     return service.indices()
+
+
+@app.get("/api/analysis")
+def analysis(_: User = Depends(viewer_user)) -> dict[str, object]:
+    return service.analysis()
+
+
+@app.get("/api/datasets")
+def datasets(_: User = Depends(viewer_user)) -> dict[str, object]:
+    return dataset_store.catalog(service.bundle.source_path.name)
+
+
+@app.get("/api/datasets/{name}")
+def dataset_detail(name: str, _: User = Depends(viewer_user)) -> dict[str, object]:
+    try:
+        return dataset_store.read(name)
+    except (FileNotFoundError, ValueError) as error:
+        raise dataset_error(error) from error
+
+
+@app.post("/api/datasets/select")
+def select_dataset(
+    payload: DatasetSelectPayload,
+    actor: User = Depends(dataset_editor),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    global service
+    try:
+        with service_lock:
+            selected = rebuild_service(dataset_store.path(payload.name))
+            service = selected
+        write_audit(db, "dataset.selected", user_id=actor.id, entity_type="dataset", entity_id=payload.name)
+        db.commit()
+        return dataset_store.catalog(service.bundle.source_path.name)
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise dataset_error(error) from error
+
+
+@app.post("/api/datasets/{name}/rows", status_code=201)
+def append_dataset_row(
+    name: str,
+    payload: DatasetRowPayload,
+    actor: User = Depends(dataset_editor),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    global service
+    try:
+        with service_lock:
+            period = dataset_store.append_row(name, payload.values, load_problem_b_data)
+            if service.bundle.source_path.name == name:
+                service = rebuild_service(dataset_store.path(name))
+        write_audit(db, "dataset.row_created", user_id=actor.id, entity_type="dataset", entity_id=name, details={"period": period})
+        db.commit()
+        return {"dataset": dataset_store.read(name), "active": service.bundle.source_path.name, "period": period}
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise dataset_error(error) from error
+
+
+@app.put("/api/datasets/{name}/rows/{period}")
+def update_dataset_row(
+    name: str,
+    period: str,
+    payload: DatasetRowPayload,
+    actor: User = Depends(dataset_editor),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    global service
+    try:
+        with service_lock:
+            updated_period = dataset_store.update_row(name, period, payload.values, load_problem_b_data)
+            if service.bundle.source_path.name == name:
+                service = rebuild_service(dataset_store.path(name))
+        write_audit(db, "dataset.row_updated", user_id=actor.id, entity_type="dataset", entity_id=name, details={"period": updated_period})
+        db.commit()
+        return {"dataset": dataset_store.read(name), "active": service.bundle.source_path.name, "period": updated_period}
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise dataset_error(error) from error
 
 
 @app.get("/api/fcm")

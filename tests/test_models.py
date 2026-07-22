@@ -44,6 +44,9 @@ class ModelTests(unittest.TestCase):
                 self.service.anfis_model_sources[target],
                 {"artifact", "trained_and_cached", "trained_in_memory"},
             )
+        self.assertEqual(len(self.service.pipeline_anfis.feature_names), 8)
+        self.assertEqual(self.service.pipeline_anfis.rule_count, 6)
+        self.assertTrue(math.isfinite(self.service.pipeline_anfis.validation_rmse_))
 
     def test_anfis_artifact_round_trip_and_compatibility_checks(self) -> None:
         x_train = np.asarray(
@@ -87,6 +90,12 @@ class ModelTests(unittest.TestCase):
                 )
 
     def test_all_evaluation_metrics_are_finite(self) -> None:
+        catalog = self.service.evaluation()["model_catalog"]
+        self.assertEqual([item["id"] for item in catalog], list(self.service.evaluation()["model_labels"]))
+        self.assertEqual(len(catalog), 3)
+        for item in catalog:
+            for key in ("label", "role", "how", "inputs", "purpose"):
+                self.assertTrue(item[key].strip(), f"{item['id']} {key}")
         for target in self.service.evaluation()["targets"]:
             for row in target["metrics"]:
                 for key in ("mae", "rmse", "smape", "mase", "directional_accuracy"):
@@ -149,7 +158,7 @@ class ModelTests(unittest.TestCase):
             self.assertAlmostEqual(sum(positives), 1.0)
             self.assertAlmostEqual(sum(impulses.values()), 0.0)
 
-        self.assertEqual(len(BUILTIN_SCENARIOS), 17)
+        self.assertEqual(len(BUILTIN_SCENARIOS), 25)
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

@@ -26,7 +26,7 @@ HIERARCHICAL_FUZZY_SPECS = (
 
 
 class HierarchicalFuzzyIndex:
-    """Экспертная свёртка восьми нечётких индексов без утечки test."""
+    """Линейная свёртка восьми индексов из ``Pipeline.ipynb``."""
 
     name = "hierarchical_fuzzy_index"
 
@@ -49,6 +49,10 @@ class HierarchicalFuzzyIndex:
         if missing:
             raise ValueError(f"В данных отсутствуют признаки иерархического индекса: {sorted(missing)}")
         numeric = frame.loc[:, self.feature_names].apply(pd.to_numeric, errors="raise")
+        if not np.isfinite(numeric.to_numpy()).all():
+            raise ValueError("Индексы Pipeline должны быть конечными")
+        # Сохраняются только для диагностической совместимости. В отличие от
+        # прежней реализации Pipeline не нормализует восемь индексов повторно.
         self.minimum_ = numeric.min()
         self.maximum_ = numeric.max()
         return self
@@ -56,18 +60,14 @@ class HierarchicalFuzzyIndex:
     def normalize(self, frame: pd.DataFrame) -> pd.DataFrame:
         if self.minimum_ is None or self.maximum_ is None:
             raise RuntimeError("HierarchicalFuzzyIndex ещё не обучен")
-        numeric = frame.loc[:, self.feature_names].astype(float)
-        span = (self.maximum_ - self.minimum_).replace(0.0, 1.0)
-        return ((numeric - self.minimum_) / span).clip(0.0, 1.0)
+        return frame.loc[:, self.feature_names].astype(float)
 
     def transform(self, frame: pd.DataFrame) -> pd.Series:
-        normalized = self.normalize(frame)
-        values = normalized.to_numpy(dtype=float) @ self.weights
+        values = self.normalize(frame).to_numpy(dtype=float) @ self.weights
         return pd.Series(values, index=frame.index, name=self.name)
 
     def contributions(self, frame: pd.DataFrame) -> pd.DataFrame:
-        normalized = self.normalize(frame)
-        contributions = normalized.mul(self.weights, axis=1)
+        contributions = self.normalize(frame).mul(self.weights, axis=1)
         contributions[self.name] = contributions.sum(axis=1)
         return contributions
 

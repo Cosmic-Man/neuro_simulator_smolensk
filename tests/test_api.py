@@ -83,12 +83,33 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(anonymous.get("/api/metadata").status_code, 401)
             self.assertEqual(anonymous.post("/api/simulate", json={"scenario": "improve_safety_budget_execution"}).status_code, 401)
 
-        paths = ("/api/metadata", "/api/history", "/api/indices", "/api/fcm?mode=adapted", "/api/evaluation", "/api/scenarios")
+        paths = ("/api/metadata", "/api/history", "/api/indices", "/api/analysis", "/api/fcm?mode=adapted", "/api/evaluation", "/api/scenarios", "/api/datasets")
         for path in paths:
             self.assertEqual(self.observer.get(path).status_code, 200, path)
         health = self.observer.get("/api/health").json()
-        self.assertEqual(health["periods"], 80)
+        self.assertEqual(health["periods"], 79)
         self.assertEqual(health["database"], "ok")
+        analysis = self.observer.get("/api/analysis").json()
+        self.assertEqual(analysis["source"], "colab/colab_kirill/Pipeline.ipynb")
+        self.assertEqual(analysis["excluded_outliers"], ["2018Q3"])
+        self.assertEqual(len(analysis["boxplots"]), 31)
+        self.assertEqual(len(analysis["memberships"]), 8)
+        self.assertEqual(len(analysis["rule_files"]), 6)
+        self.assertEqual(analysis["applied_rules"], 1176)
+        datasets = self.observer.get("/api/datasets").json()
+        self.assertEqual(len(datasets["datasets"]), 2)
+        self.assertIn("smolensk_dataset_plus_zero.xlsx", {item["name"] for item in datasets["datasets"]})
+        detail = self.observer.get("/api/datasets/smolensk_dataset_shared.xlsx").json()
+        self.assertEqual(len(detail["columns"]), 31)
+        self.assertEqual(len(detail["rows_data"]), 80)
+        self.assertEqual(
+            self.observer.post(
+                "/api/datasets/select",
+                json={"name": "smolensk_dataset_plus_zero.xlsx"},
+                headers={"X-CSRF-Token": self.observer_csrf},
+            ).status_code,
+            403,
+        )
 
     def test_simulation_contains_business_percentages_and_budget_ranking(self) -> None:
         response = self.observer.post(
@@ -103,6 +124,11 @@ class ApiTests(unittest.TestCase):
             self.assertIn("relative_change_percent", payload["summary"][metric])
         self.assertIn("improvement_percent", payload["summary"]["accidents"])
         self.assertEqual(len(payload["budget_analysis"]["programs"]), 3)
+        recommendations = payload["improvement_recommendations"]
+        self.assertEqual(len(recommendations["objectives"]), 12)
+        self.assertTrue(all(len(objective["items"]) == 5 for objective in recommendations["objectives"]))
+        parking = next(item for item in recommendations["objectives"] if item["id"] == "parking_safety")
+        self.assertEqual(len(parking["items"]), 5)
 
     def test_role_permissions_csrf_and_scenario_ownership(self) -> None:
         payload = self.scenario_payload(uuid.uuid4().hex[:8])
@@ -164,6 +190,25 @@ class ApiTests(unittest.TestCase):
             headers={"X-CSRF-Token": self.admin_csrf},
         )
         self.assertEqual(response.status_code, 409)
+
+    def test_dataset_selection_by_user_and_restore(self) -> None:
+        selected = self.user.post(
+            "/api/datasets/select",
+            json={"name": "smolensk_dataset_plus_zero.xlsx"},
+            headers={"X-CSRF-Token": self.user_csrf},
+        )
+        try:
+            self.assertEqual(selected.status_code, 200, selected.text)
+            self.assertEqual(selected.json()["active"], "smolensk_dataset_plus_zero.xlsx")
+            self.assertEqual(self.user.get("/api/health").json()["dataset"], "smolensk_dataset_plus_zero.xlsx")
+        finally:
+            restored = self.user.post(
+                "/api/datasets/select",
+                json={"name": "smolensk_dataset_shared.xlsx"},
+                headers={"X-CSRF-Token": self.user_csrf},
+            )
+        self.assertEqual(restored.status_code, 200, restored.text)
+        self.assertEqual(restored.json()["active"], "smolensk_dataset_shared.xlsx")
 
     def test_admin_user_management(self) -> None:
         self.assertEqual(self.user.get("/api/admin/users").status_code, 403)

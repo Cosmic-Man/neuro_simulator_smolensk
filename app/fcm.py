@@ -113,6 +113,57 @@ def _reverse_reallocation_scenario(focus_id: str, focus_label: str) -> dict[str,
 
 _LABEL_BY_ID = {spec.id: spec.label for spec in ADJUSTABLE_SPECS}
 
+RELATION_SCENARIOS: dict[str, dict[str, object]] = {
+    "relation_road_repair": {
+        "version": 1,
+        "label": "Связь · ремонт дорог → нормативное состояние",
+        "description": "Проверяет, как максимальное усиление ремонта дорог меняет состояние дорожной сети и связанные показатели.",
+        "mode": "adapted", "horizon": 8, "impulses": {"road_repair": 1.0},
+    },
+    "relation_road_condition": {
+        "version": 1,
+        "label": "Связь · состояние дорог → безопасность и время поездки",
+        "description": "Улучшение нормативного состояния дорог должно снижать загруженность и поддерживать безопасность движения.",
+        "mode": "adapted", "horizon": 8, "impulses": {"road_condition": 1.0},
+    },
+    "relation_lighting_proxy": {
+        "version": 1,
+        "label": "Связь · освещённость и переходы → безопасность",
+        "description": "В датасете нет отдельного ряда освещённости, поэтому используется ближайший измеримый показатель — регулируемые переходы.",
+        "mode": "adapted", "horizon": 8, "impulses": {"crossings": 1.0},
+    },
+    "relation_regularity": {
+        "version": 1,
+        "label": "Связь · регулярность → доступность транспорта",
+        "description": "Показывает эффект максимального повышения доли рейсов, выполненных по расписанию.",
+        "mode": "adapted", "horizon": 8, "impulses": {"transport_regularity": 1.0},
+    },
+    "relation_digital_control": {
+        "version": 1,
+        "label": "Связь · цифровое управление → пропускная способность",
+        "description": "Прокси-сценарий цифрового управления: скорость повышается, а загруженность снижается одновременно.",
+        "mode": "adapted", "horizon": 8, "impulses": {"average_speed": 0.6, "congestion": -0.4},
+    },
+    "relation_travel_time": {
+        "version": 1,
+        "label": "Связь · снижение времени поездки → доступность",
+        "description": "Среднее время поездки представлено обратным показателем загруженности: импульс −1 означает её максимальное снижение.",
+        "mode": "adapted", "horizon": 8, "impulses": {"congestion": -1.0},
+    },
+    "relation_accident_growth": {
+        "version": 1,
+        "label": "Риск · рост аварийности → снижение результата",
+        "description": "Стресс-сценарий ухудшения безопасности движения для оценки устойчивости транспортной системы.",
+        "mode": "adapted", "horizon": 8, "impulses": {"traffic_safety": -1.0},
+    },
+    "relation_pedestrian_space": {
+        "version": 1,
+        "label": "Баланс · пешеходная инфраструктура и дорожное пространство",
+        "description": "Переходы усиливаются, но небольшая часть пропускной способности перераспределяется в пользу пешеходов.",
+        "mode": "adapted", "horizon": 8, "impulses": {"crossings": 1.0, "average_speed": -0.2},
+    },
+}
+
 BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
     **{
         f"improve_{spec.id}": _point_improvement_scenario(spec.id, spec.label)
@@ -126,6 +177,7 @@ BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
         f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
         for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
     },
+    **RELATION_SCENARIOS,
     "inertial": {
         "version": 1,
         "label": "Инерционный · без импульсов",

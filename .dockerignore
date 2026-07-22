@@ -29,3 +29,6 @@ __pycache__
 .mypy_cache
 runtime
 tests
+colab/**
+!colab/colab_kirill/
+!colab/colab_kirill/*_rules.json

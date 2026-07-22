@@ -3,6 +3,9 @@ const state = {
   history: null,
   evaluation: null,
   indices: null,
+  analysis: null,
+  datasets: null,
+  datasetDetail: null,
   scenarios: [],
   baseImpulses: {},
   graph: null,
@@ -10,6 +13,7 @@ const state = {
   user: null,
   csrfToken: null,
   budgetAnalysis: null,
+  improvementRecommendations: null,
   eventsBound: false,
 };
 
@@ -55,6 +59,14 @@ const sectionGuide = [
   {
     id: "map", index: "07", title: "Карта связей FCM", collapsible: true,
     explanation: "Объясняет, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. Карта помогает проследить логику уже полученного сценарного результата.",
+  },
+  {
+    id: "analysis", index: "08", title: "Анализ данных Pipeline", collapsible: true,
+    explanation: "Показывает исходную проверку данных: типичные диапазоны, выбросы, нечёткие границы оценок и веса итогового индекса. Это делает расчёт из Pipeline.ipynb наглядным для заказчика.",
+  },
+  {
+    id: "datasets", index: "09", title: "Данные для расчёта", collapsible: true,
+    explanation: "Позволяет заказчику увидеть, какой XLSX определяет расчёт, сравнить два файла и проверить строки. Пользователь и администратор могут исправить квартал или добавить новый.",
   },
 ];
 
@@ -247,7 +259,7 @@ function renderIndices() {
     <article class="panel index-card"><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
   const latestHierarchical = state.indices.hierarchical[state.indices.hierarchical.length - 1];
   document.getElementById("hierarchicalIndexCard").innerHTML = `
-    <article class="panel expert-index-card"><div><span class="panel-kicker">8 нечётких индексов</span><small>Иерархический индекс Гульдар</small></div><strong>${formatNumber(latestHierarchical)}</strong></article>`;
+    <article class="panel expert-index-card"><div><span class="panel-kicker">8 нечётких индексов</span><small>Итоговая линейная свёртка Pipeline</small></div><strong>${formatNumber(latestHierarchical)}</strong></article>`;
   document.getElementById("fuzzySourceList").innerHTML = state.indices.fuzzy.map((item, index) => `
     <section class="fuzzy-source-item">
       <div class="fuzzy-source-heading"><span>${index + 1}</span><strong>${item.label}</strong></div>
@@ -273,12 +285,219 @@ function renderFuzzyIndexPlot() {
   const item = state.indices.fuzzy.find(index => index.id === id);
   Plotly.react("fuzzyIndexPlot", [
     { x: state.indices.periods, y: item.values, name: item.label, type: "scatter", mode: "lines", line: { color: colors.teal, width: 2.5 } },
-    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "solid" } },
+    { x: state.indices.periods, y: state.indices.hierarchical, name: "Pipeline · итоговый индекс", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "solid" } },
   ], { ...baseLayout, margin: { l: 50, r: 16, t: 24, b: 46 }, yaxis: { ...baseLayout.yaxis, range: [0, 100], title: "баллы" } }, plotConfig);
+}
+
+function membershipValue(x, term) {
+  const p = term.params;
+  if (term.type === "trapmf") {
+    const [a, b, c, d] = p;
+    if (x <= a || x >= d) return 0;
+    if (x >= b && x <= c) return 1;
+    return x < b ? (b === a ? 1 : (x - a) / (b - a)) : (d === c ? 1 : (d - x) / (d - c));
+  }
+  const [a, b, c] = p;
+  if (x <= a || x >= c) return 0;
+  if (x === b) return 1;
+  return x < b ? (b === a ? 1 : (x - a) / (b - a)) : (c === b ? 1 : (c - x) / (c - b));
+}
+
+function membershipTraces(variable) {
+  const [minimum, maximum] = variable.universe;
+  const x = Array.from({ length: 201 }, (_, index) => minimum + (maximum - minimum) * index / 200);
+  return variable.terms.map((term, index) => ({
+    x, y: x.map(value => membershipValue(value, term)), name: term.name,
+    type: "scatter", mode: "lines", line: { width: 2.5, color: [colors.teal, colors.coral, colors.gold, colors.blue, colors.bright, colors.ink][index % 6] },
+    hovertemplate: "%{x:.2f}<br>принадлежность %{y:.2f}<extra>" + escapeHtml(term.name) + "</extra>",
+  }));
+}
+
+function renderBoxplots() {
+  const group = document.getElementById("boxplotGroup").value;
+  const items = state.analysis.boxplots.filter(item => item.group === group);
+  const traces = items.map((item, index) => ({
+    y: item.values, text: state.analysis.periods, name: item.label,
+    type: "box", boxpoints: "outliers", jitter: .2, pointpos: 0,
+    marker: { color: [colors.teal, colors.coral, colors.gold, colors.blue, colors.bright][index % 5], size: 6 },
+    line: { width: 1.7 }, hovertemplate: "%{text}<br><b>%{y:.2f}</b><extra>" + escapeHtml(item.label) + "</extra>",
+  }));
+  Plotly.react("boxplotPlot", traces, {
+    ...baseLayout, margin: { l: 58, r: 18, t: 20, b: 105 }, showlegend: false,
+    xaxis: { ...baseLayout.xaxis, tickangle: -25, automargin: true },
+    yaxis: { ...baseLayout.yaxis, title: "исходные значения" },
+  }, plotConfig);
+  const outliers = items.flatMap(item => item.outliers.map(value => ({ ...value, label: item.label })));
+  document.getElementById("outlierSummary").innerHTML = outliers.length
+    ? `<strong>Нетипичные наблюдения: ${outliers.length}.</strong> ${outliers.slice(0, 5).map(item => `${escapeHtml(item.label)} — ${escapeHtml(item.period)} (${formatNumber(item.value, 2)})`).join("; ")}${outliers.length > 5 ? "…" : ""}`
+    : "<strong>Выбросов по правилу 1,5 IQR не найдено.</strong> Значения этой группы находятся внутри статистически ожидаемого диапазона.";
+}
+
+function renderMembershipVariableOptions() {
+  const selected = state.analysis.memberships.find(item => item.id === document.getElementById("membershipIndex").value);
+  fillSelect(document.getElementById("membershipVariable"), selected.variables);
+  renderMembershipPlot();
+}
+
+function renderMembershipPlot() {
+  const selected = state.analysis.memberships.find(item => item.id === document.getElementById("membershipIndex").value);
+  const variable = selected.variables.find(item => item.id === document.getElementById("membershipVariable").value);
+  Plotly.react("membershipPlot", membershipTraces(variable), {
+    ...baseLayout, margin: { l: 55, r: 18, t: 24, b: 52 },
+    xaxis: { ...baseLayout.xaxis, title: variable.label },
+    yaxis: { ...baseLayout.yaxis, title: "степень принадлежности", range: [0, 1.05] },
+  }, plotConfig);
+}
+
+function renderAnalysis() {
+  const analysis = state.analysis;
+  document.getElementById("pipelineStats").innerHTML = [
+    ["Строк в источнике", analysis.source_rows],
+    ["После очистки", analysis.processed_rows],
+    ["Исключено выбросов", analysis.excluded_outliers.length],
+    ["Нечётких индексов", analysis.memberships.length],
+    ["Правил из JSON", analysis.applied_rules],
+  ].map(([label, value]) => `<article class="analysis-stat-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+
+  const groups = [...new Set(analysis.boxplots.map(item => item.group))].map(group => ({ id: group, label: group }));
+  fillSelect(document.getElementById("boxplotGroup"), groups);
+  fillSelect(document.getElementById("membershipIndex"), analysis.memberships);
+  renderBoxplots();
+  renderMembershipVariableOptions();
+
+  const reference = analysis.reference_memberships;
+  document.getElementById("membershipReferenceNote").textContent = reference.note;
+  Plotly.react("membershipReferencePlot", membershipTraces({ universe: reference.universe, terms: reference.terms }), {
+    ...baseLayout, height: 260, margin: { l: 46, r: 12, t: 24, b: 40 },
+    xaxis: { ...baseLayout.xaxis, title: "нормированная шкала" },
+    yaxis: { ...baseLayout.yaxis, range: [0, 1.05], title: "принадлежность" },
+  }, plotConfig);
+
+  Plotly.react("pipelineWeightsPlot", [{
+    x: analysis.linear_weights.map(item => item.weight * 100),
+    y: analysis.linear_weights.map(item => item.label),
+    type: "bar", orientation: "h", marker: { color: colors.teal },
+    text: analysis.linear_weights.map(item => `${formatNumber(item.weight * 100, 1)}%`), textposition: "outside",
+    hovertemplate: "%{y}<br><b>%{x:.1f}%</b><extra></extra>",
+  }], {
+    ...baseLayout, height: 300, showlegend: false, margin: { l: 175, r: 48, t: 14, b: 38 },
+    xaxis: { ...baseLayout.xaxis, title: "вес в итоговом индексе, %" },
+    yaxis: { ...baseLayout.yaxis, autorange: "reversed", automargin: true },
+  }, plotConfig);
+}
+
+function renderDatasetCatalog() {
+  const select = document.getElementById("datasetSelect");
+  const selected = select.value || state.datasets.active;
+  select.innerHTML = state.datasets.datasets.map(item =>
+    `<option value="${escapeHtml(item.name)}">${item.active ? "● " : ""}${escapeHtml(item.name)} · ${item.rows} строк</option>`).join("");
+  select.value = state.datasets.datasets.some(item => item.name === selected) ? selected : state.datasets.active;
+}
+
+function datasetRowValues() {
+  const values = {};
+  document.querySelectorAll("#datasetFields input[data-feature]").forEach(input => {
+    values[input.dataset.feature] = Number(input.value);
+  });
+  return values;
+}
+
+function populateDatasetRow(period) {
+  const isNew = period === "__new__";
+  const row = isNew ? null : state.datasetDetail.rows_data.find(item => item.period === period);
+  document.querySelectorAll("#datasetFields input[data-feature]").forEach(input => {
+    input.value = row ? row.values[input.dataset.feature] : 0;
+  });
+  const next = state.datasetDetail.next_period;
+  document.getElementById("datasetEditorHint").textContent = isNew
+    ? `Будет добавлен квартал ${next}. Заполните 31 показатель; нули разрешены для демонстрационной заготовки.`
+    : `Редактируется квартал ${period}. Сохранение проходит полную проверку Pipeline до замены XLSX.`;
+}
+
+function renderDatasetDetail() {
+  const detail = state.datasetDetail;
+  const dataset = state.datasets.datasets.find(item => item.name === detail.name);
+  document.getElementById("datasetSummary").innerHTML = `<strong>${dataset?.active ? "Активный источник расчёта" : "Файл открыт только для просмотра"}</strong>
+    <span>${detail.rows} строк · ${escapeHtml(detail.first_period)}–${escapeHtml(detail.last_period)}</span>
+    <small>${dataset?.active ? "Все графики и рекомендации рассчитаны по этому файлу." : "Нажмите «Использовать для расчёта», чтобы переключить модель."}</small>`;
+
+  const groups = [];
+  detail.columns.forEach(column => {
+    let group = groups.find(item => item.name === column.group);
+    if (!group) { group = { name: column.group, columns: [] }; groups.push(group); }
+    group.columns.push(column);
+  });
+  const readonly = state.user.role === "observer" ? "disabled" : "";
+  document.getElementById("datasetFields").innerHTML = groups.map(group => `<fieldset>
+    <legend>${escapeHtml(group.name)}</legend><div>${group.columns.map(column => `<label>${escapeHtml(column.label)}
+      <input type="number" step="any" min="0" data-feature="${escapeHtml(column.id)}" ${readonly}></label>`).join("")}</div></fieldset>`).join("");
+
+  const rowSelect = document.getElementById("datasetRowSelect");
+  rowSelect.innerHTML = detail.rows_data.map(row => `<option value="${escapeHtml(row.period)}">${escapeHtml(row.period)}</option>`).join("")
+    + `<option value="__new__">${escapeHtml(detail.next_period)} · новая строка</option>`;
+  rowSelect.value = detail.rows_data.at(-1).period;
+  populateDatasetRow(rowSelect.value);
+
+  const previewIds = [
+    "бюджет_дворы_pct", "дороги_норматив_pct_A", "рейсы_расписание_pct_B",
+    "скорость_магистрали_B_кмч", "дтп_10тыс_B", "дороги_норматив_pct_C",
+  ];
+  const previewColumns = previewIds.map(id => detail.columns.find(column => column.id === id)).filter(Boolean);
+  document.getElementById("datasetPreviewHead").innerHTML = `<tr><th>Квартал</th>${previewColumns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
+  document.getElementById("datasetPreviewBody").innerHTML = detail.rows_data.slice(-5).map(row => `<tr><td><strong>${escapeHtml(row.period)}</strong></td>${previewColumns.map(column => `<td>${formatNumber(row.values[column.id], 2)}</td>`).join("")}</tr>`).join("");
+}
+
+async function loadDatasetDetail(name) {
+  state.datasetDetail = await api(`/api/datasets/${encodeURIComponent(name)}`);
+  renderDatasetDetail();
+}
+
+async function activateDataset() {
+  const button = document.getElementById("activateDataset");
+  button.disabled = true; button.textContent = "Пересчёт…";
+  try {
+    const name = document.getElementById("datasetSelect").value;
+    await api("/api/datasets/select", { method: "POST", body: JSON.stringify({ name }) });
+    showToast(`Датасет ${name} выбран. Все разделы пересчитаны.`);
+    await initializeApplication();
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Использовать для расчёта"; }
+}
+
+async function saveDatasetRow() {
+  const button = document.getElementById("saveDatasetRow");
+  const name = document.getElementById("datasetSelect").value;
+  const period = document.getElementById("datasetRowSelect").value;
+  const isNew = period === "__new__";
+  button.disabled = true; button.textContent = "Проверка Pipeline…";
+  try {
+    const path = isNew
+      ? `/api/datasets/${encodeURIComponent(name)}/rows`
+      : `/api/datasets/${encodeURIComponent(name)}/rows/${encodeURIComponent(period)}`;
+    const result = await api(path, { method: isNew ? "POST" : "PUT", body: JSON.stringify({ values: datasetRowValues() }) });
+    state.datasetDetail = result.dataset;
+    showToast(`${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period}.`);
+    if (result.active === name) await initializeApplication();
+    else renderDatasetDetail();
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Сохранить строку"; }
 }
 
 function selectedEvaluation() {
   return state.evaluation.targets.find(target => target.id === document.getElementById("evaluationTarget").value);
+}
+
+function renderModelGuide() {
+  document.getElementById("modelGuide").innerHTML = state.evaluation.model_catalog.map(model => `
+    <article class="model-guide-card">
+      <span class="model-role">${escapeHtml(model.role)}</span>
+      <h4>${escapeHtml(model.label)}</h4>
+      <dl>
+        <div><dt>Как считает</dt><dd>${escapeHtml(model.how)}</dd></div>
+        <div><dt>Что использует</dt><dd>${escapeHtml(model.inputs)}</dd></div>
+        <div><dt>Зачем сравниваем</dt><dd>${escapeHtml(model.purpose)}</dd></div>
+      </dl>
+    </article>`).join("");
 }
 
 function renderEvaluation() {
@@ -293,8 +512,11 @@ function renderEvaluation() {
   Plotly.react("evaluationPlot", traces, { ...baseLayout, yaxis: { ...baseLayout.yaxis, title: target.unit } }, plotConfig);
   const metrics = target.metrics.filter(row => row.split === split);
   const bestRmse = Math.min(...metrics.map(row => row.rmse));
-  document.getElementById("metricsBody").innerHTML = metrics.map(row => `
-    <tr><td>${row.model_label}</td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`).join("");
+  const catalog = Object.fromEntries(state.evaluation.model_catalog.map(model => [model.id, model]));
+  document.getElementById("metricsBody").innerHTML = metrics.map(row => {
+    const model = catalog[row.model];
+    return `<tr><td><strong>${escapeHtml(row.model_label)}</strong><small class="model-table-role">${escapeHtml(model.role)}</small></td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`;
+  }).join("");
 }
 
 function renderAnfisCards() {
@@ -302,7 +524,7 @@ function renderAnfisCards() {
   document.getElementById("anfisCards").innerHTML = state.metadata.anfis.map(model => `
     <article class="panel model-card"><span class="panel-kicker">ANFIS · ${model.rule_count} правил</span><h3>${labels[model.target]}</h3><ul>
       <li><span>Входы</span><strong>${model.inputs.length}</strong></li><li><span>σ</span><strong>${formatNumber(model.sigma, 2)}</strong></li>
-      <li><span>Ridge</span><strong>${formatNumber(model.ridge, 3)}</strong></li><li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 3)}</strong></li>
+      <li><span>Эпохи</span><strong>${model.epochs}</strong></li><li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 4)}</strong></li>
     </ul></article>`).join("");
 }
 
@@ -566,6 +788,26 @@ function renderBusinessSummary(result) {
   }).join("");
 }
 
+function renderImprovementRecommendations() {
+  const data = state.improvementRecommendations;
+  if (!data) return;
+  const select = document.getElementById("recommendationObjective");
+  const previous = select.value || "traffic_safety";
+  fillSelect(select, data.objectives);
+  select.value = data.objectives.some(item => item.id === previous) ? previous : data.objectives[0].id;
+  const objective = data.objectives.find(item => item.id === select.value);
+  document.getElementById("recommendationStatus").innerHTML = `<strong>${escapeHtml(objective.label)}: ${formatNumber(objective.current, 2)} из 100</strong>
+    <span>${escapeHtml(objective.status)} · данные за ${escapeHtml(data.period)}</span>`;
+  document.getElementById("recommendationList").innerHTML = objective.items.map(item => {
+    const effect = item.expected_effect_points == null
+      ? "Прямой показатель канонических JSON-правил"
+      : `Модельный ориентир: ${signed(item.expected_effect_points, 3)} п.п. при стандартном воздействии`;
+    return `<li><span class="recommendation-rank">${item.rank}</span><div><strong>${escapeHtml(item.label)}</strong>
+      <p>${escapeHtml(item.action)}</p><small>${escapeHtml(item.relation)} · ${escapeHtml(effect)}</small></div></li>`;
+  }).join("");
+  document.getElementById("recommendationMethodology").textContent = data.methodology_note;
+}
+
 function budgetMetricCell(metric) {
   return `<strong>${signed(metric.relative_change_percent)}%</strong><small>${signed(metric.delta_points)} п.</small>`;
 }
@@ -614,7 +856,9 @@ async function runScenario() {
     }
     renderBusinessSummary(result);
     state.budgetAnalysis = result.budget_analysis;
+    state.improvementRecommendations = result.improvement_recommendations;
     renderBudgetAnalysis();
+    renderImprovementRecommendations();
     document.getElementById("scenarioResultTitle").textContent = result.scenario.label;
     document.getElementById("scenarioExplanation").innerHTML = result.explanation.map(item => `<li>${item}</li>`).join("");
     document.getElementById("appliedImpulses").innerHTML = result.applied_impulses.length
@@ -679,8 +923,10 @@ function applyUserInterface() {
     ? "Доступные транспортные<br><em>сценарии и результаты</em>"
     : "Транспортная доступность<br><em>и безопасность города</em>";
   document.getElementById("heroCopy").textContent = isObserver
-    ? "Вам доступны все 7 разделов системы: лаборатория сценариев, чувствительность, текущее состояние, история, индексы, модели и карта связей. Данные открыты для просмотра без сложных настроек и редактирования."
-    : "Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.";
+    ? "Вам доступны все 9 разделов: выберите проблемную цель, изучите пять предложенных мер и посмотрите ожидаемый эффект. Настройки данных и сценариев доступны только для просмотра."
+    : state.user.role === "admin"
+      ? "Вы управляете всей демонстрацией: данными, сценариями, рекомендациями и доступом пользователей. Начните с цели заказчика, затем проверьте пять мер прогнозом."
+      : "Начните с проблемной цели заказчика: система предложит пять понятных мер, покажет эффект в процентах и поможет сохранить сценарий. При необходимости выберите или дополните XLSX.";
   document.getElementById("heroPrimaryAction").textContent = isObserver ? "Открыть доступные сценарии" : "Запустить сценарий";
   document.getElementById("scenarioControlKicker").textContent = isObserver ? "Доступные материалы" : "Настройки";
   document.getElementById("scenarioControlTitle").textContent = isObserver ? "Выберите сценарий" : "Управляющие воздействия";
@@ -803,6 +1049,18 @@ function bindEvents() {
   document.getElementById("runScenario").addEventListener("click", runScenario);
   document.getElementById("sensitivityTarget").addEventListener("change", renderSensitivity);
   document.getElementById("budgetObjective").addEventListener("change", renderBudgetAnalysis);
+  document.getElementById("boxplotGroup").addEventListener("change", renderBoxplots);
+  document.getElementById("membershipIndex").addEventListener("change", renderMembershipVariableOptions);
+  document.getElementById("membershipVariable").addEventListener("change", renderMembershipPlot);
+  document.getElementById("recommendationObjective").addEventListener("change", renderImprovementRecommendations);
+  document.getElementById("datasetSelect").addEventListener("change", event => loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true)));
+  document.getElementById("datasetRowSelect").addEventListener("change", event => populateDatasetRow(event.target.value));
+  document.getElementById("activateDataset").addEventListener("click", activateDataset);
+  document.getElementById("newDatasetRow").addEventListener("click", () => {
+    document.getElementById("datasetRowSelect").value = "__new__";
+    populateDatasetRow("__new__");
+  });
+  document.getElementById("saveDatasetRow").addEventListener("click", saveDatasetRow);
   document.getElementById("logoutButton").addEventListener("click", logout);
   document.getElementById("changePassword").addEventListener("click", changePassword);
   document.getElementById("createUserForm").addEventListener("submit", createAdminUser);
@@ -812,19 +1070,20 @@ async function initializeApplication() {
   const status = document.getElementById("apiStatus");
   try {
     const isObserver = state.user.role === "observer";
-    const [health, metadata, history, indices, evaluation, scenarios] = await Promise.all([
-      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/scenarios"),
+    const [health, metadata, history, indices, evaluation, analysis, scenarios, datasets] = await Promise.all([
+      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"),
     ]);
-    Object.assign(state, { metadata, history, indices, evaluation, scenarios: scenarios.scenarios });
+    Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, scenarios: scenarios.scenarios });
     status.className = "status-pill ready"; status.innerHTML = isObserver
-      ? "<span></span>Доступны 7 разделов"
+      ? "<span></span>Доступны 9 разделов"
       : `<span></span>Готово · ${health.periods} кварталов`;
     renderOverview();
     renderScenarioControls(); bindEvents();
     fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "integrated_mobility";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
-    fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.targets);
-    renderHistory(); renderIndices(); renderEvaluation(); renderAnfisCards(); renderSensitivity();
+    fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
+    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderDatasetCatalog();
+    await loadDatasetDetail(state.datasets.active);
     await renderFcm();
     await runScenario();
     await loadAdminPanel();
