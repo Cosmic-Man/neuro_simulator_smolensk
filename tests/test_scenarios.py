@@ -22,7 +22,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_builtin_catalog_is_available_without_storage(self) -> None:
         scenarios = builtin_items()
-        self.assertGreater(len(scenarios), 1)
+        self.assertEqual([item["id"] for item in scenarios], ["inertial"])
         self.assertTrue(all(item["builtin"] for item in scenarios))
         self.assertTrue(all("database_id" not in item for item in scenarios))
 

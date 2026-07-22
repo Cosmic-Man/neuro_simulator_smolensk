@@ -118,11 +118,11 @@ class ModelTests(unittest.TestCase):
         self.assertTrue(all(row["rmse"] > 1e-9 for row in anfis_metrics))
 
     def test_scenario_directions_are_plausible(self) -> None:
-        safety = self.service.simulate("custom", custom_impulses={"safety_budget_execution": 1.0})
+        safety = self.service.simulate("inertial", custom_impulses={"safety_budget_execution": 1.0})
         self.assertGreater(safety["scenario_result"][-1]["safety_index"], safety["baseline"][-1]["safety_index"])
         self.assertLess(safety["scenario_result"][-1]["accidents"], safety["baseline"][-1]["accidents"])
 
-        transit = self.service.simulate("custom", custom_impulses={"transit_budget_execution": 1.0})
+        transit = self.service.simulate("inertial", custom_impulses={"transit_budget_execution": 1.0})
         self.assertGreater(transit["scenario_result"][-1]["regularity"], transit["baseline"][-1]["regularity"])
         self.assertGreater(transit["scenario_result"][-1]["accessibility"], transit["baseline"][-1]["accessibility"])
 
@@ -137,37 +137,15 @@ class ModelTests(unittest.TestCase):
             result["baseline"][-1]["accessibility"],
         )
 
-        roads = self.service.simulate("custom", custom_impulses={"road_budget_execution": 1.0})
+        roads = self.service.simulate("inertial", custom_impulses={"road_budget_execution": 1.0})
         self.assertGreater(roads["scenario_result"][-1]["accessibility"], roads["baseline"][-1]["accessibility"])
 
-    def test_builtin_scenarios_exclude_point_and_plus_one_reallocation_rules(self) -> None:
-        adjustable = {spec.id for spec in NODE_SPECS if spec.adjustable}
-        self.assertFalse(any(scenario_id.startswith("improve_") for scenario_id in BUILTIN_SCENARIOS))
-        self.assertFalse(any(scenario_id.startswith("reallocate_") for scenario_id in BUILTIN_SCENARIOS))
-
-        reverse_scenarios = {
-            scenario_id: scenario
-            for scenario_id, scenario in BUILTIN_SCENARIOS.items()
-            if scenario_id.startswith("reverse_reallocate_")
-        }
-        self.assertEqual(len(reverse_scenarios), len(REVERSE_REALLOCATION_FOCUS_IDS))
-        kind_by_id = {spec.id: spec.kind for spec in NODE_SPECS}
-        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS:
-            self.assertNotEqual(kind_by_id[focus_id], "target")
-            scenario = reverse_scenarios[f"reverse_reallocate_{focus_id}"]
-            impulses = scenario["impulses"]
-            self.assertEqual(set(impulses), adjustable)
-            self.assertEqual(impulses[focus_id], -1.0)
-            positives = [value for node, value in impulses.items() if node != focus_id]
-            self.assertTrue(all(value > 0 for value in positives))
-            self.assertAlmostEqual(sum(positives), 1.0)
-            self.assertAlmostEqual(sum(impulses.values()), 0.0)
-
-        self.assertEqual(len(BUILTIN_SCENARIOS), 12)
+    def test_only_inertial_builtin_scenario_is_available(self) -> None:
+        self.assertEqual(list(BUILTIN_SCENARIOS), ["inertial"])
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            self.service.simulate("custom", custom_impulses={"unknown": 0.1})
+            self.service.simulate("inertial", custom_impulses={"unknown": 0.1})
 
 
 if __name__ == "__main__":

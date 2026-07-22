@@ -70,7 +70,7 @@ const technicalGuide = [
 ];
 
 const mapGuide = {
-  id: "map", index: "06", title: "Граф связей FCM",
+  id: "map", index: "04", title: "Граф связей FCM",
   explanation: "Показывает, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. По графу можно проследить логику сценарного результата.",
 };
 
@@ -108,8 +108,8 @@ function initializePageStructure() {
   const appendixContent = document.getElementById("technicalAppendixContent");
   customerGuide.forEach(item => main.insertBefore(document.getElementById(item.id), appendix));
   technicalGuide.forEach(item => appendixContent.appendChild(document.getElementById(item.id)));
-  // Граф FCM — отдельный последний раздел, доступный напрямую из верхнего меню.
-  main.appendChild(document.getElementById("map"));
+  // Граф FCM — отдельный раздел перед техническими графиками.
+  main.insertBefore(document.getElementById("map"), appendix);
 
   sectionGuide.forEach(item => {
     const section = document.getElementById(item.id);

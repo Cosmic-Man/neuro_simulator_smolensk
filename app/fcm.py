@@ -137,19 +137,6 @@ BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
         "horizon": 8,
         "impulses": {},
     },
-    **{
-        f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
-        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
-    },
-    **RELATION_SCENARIOS,
-    "custom": {
-        "version": 1,
-        "label": "Пользовательский · ручная настройка",
-        "description": "Собственный набор управляющих воздействий.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {},
-    },
 }
 
 
