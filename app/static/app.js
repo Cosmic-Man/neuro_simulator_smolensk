@@ -1084,7 +1084,7 @@ function renderBusinessSummary(result) {
       "Хорошее": "good", "Отличное": "excellent", "Превосходное": "superb",
     }[quality.category] : "";
     const valueMarkup = key === "integrated_mobility"
-      ? `<strong>${formatNumber(metric.scenario)}</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${signed(metric.relative_change_percent)}%</small>`
+      ? `<strong>${formatNumber(metric.scenario)}</strong>`
       : `<strong>${signed(metric.relative_change_percent)}%</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>`;
     return `<article class="panel business-kpi ${trend} ${qualityClass ? `quality-${qualityClass}` : ""}" style="--accent:${color}">
       <span>${label}</span>${valueMarkup}${accident}
@@ -1093,12 +1093,12 @@ function renderBusinessSummary(result) {
 }
 
 function interpretQualityIndex(score) {
-  if (score <= 20) return { category: "Катастрофическое", description: "Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
-  if (score <= 40) return { category: "Плохое", description: "Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
-  if (score <= 60) return { category: "Удовлетворительное", description: "Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
-  if (score <= 80) return { category: "Хорошее", description: "Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
-  if (score <= 95) return { category: "Отличное", description: "Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
-  return { category: "Превосходное", description: "Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
+  if (score <= 20) return { category: "Катастрофическое", description: " Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
+  if (score <= 40) return { category: "Плохое", description: " Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
+  if (score <= 60) return { category: "Удовлетворительное", description: " Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
+  if (score <= 80) return { category: "Хорошее", description: " Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
+  if (score <= 95) return { category: "Отличное", description: " Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
+  return { category: "Превосходное", description: " Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
 }
 
 function renderImprovementRecommendations(score = null) {
