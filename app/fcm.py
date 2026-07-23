@@ -134,7 +134,7 @@ BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
         "label": "Инерционный сценарий",
         "description": "Темпы ремонта дорог, развитие общественного транспорта и цифровизация сохраняются без значительных изменений.",
         "mode": "adapted",
-        "horizon": 8,
+        "horizon": 1,
         "impulses": {},
     },
     "road_infrastructure_decline": {
