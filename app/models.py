@@ -11,6 +11,9 @@ from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
+import joblib
+import torch
+from torch import nn
 
 
 def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -733,8 +736,8 @@ class RobustScaler:
         return np.asarray(values, dtype=float) * self.scale_ + self.center_
 
 
-class PipelineANFIS:
-    """NumPy-перенос архитектуры ANFIS из ``Pipeline.ipynb``.
+class LegacyPipelineANFIS:
+    """Устаревший NumPy-перенос; рабочий Pipeline использует сохранённые веса ниже.
 
     Восемь гауссовых правил, общий sigma на правило и линейные консеквенты.
     Параметры обучаются Adam с теми же основными гиперпараметрами notebook.
@@ -786,7 +789,7 @@ class PipelineANFIS:
         for run in range(10):
             rng = np.random.RandomState(self.random_state + run)
             centers = self._kmeans_plus_plus(array, self.n_rules, rng)
-            for _ in range(100):
+            for _ in range(300):
                 distances = np.sum((array[:, None, :] - centers[None, :, :]) ** 2, axis=2)
                 labels = np.argmin(distances, axis=1)
                 updated = centers.copy()
@@ -845,11 +848,8 @@ class PipelineANFIS:
         parameters = [self.centers_, self.sigmas_, self.consequents_]
         first_moments = [np.zeros_like(value) for value in parameters]
         second_moments = [np.zeros_like(value) for value in parameters]
-        initial_validation = self.predict(x_validation)
-        best_loss = float(np.mean((initial_validation - y_validation) ** 2))
-        best_state: tuple[np.ndarray, np.ndarray, np.ndarray] | None = tuple(
-            value.copy() for value in parameters
-        )
+        best_loss = float("inf")
+        best_state: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
         patience_counter = 0
 
         for epoch in range(1, self.epochs + 1):
@@ -871,8 +871,6 @@ class PipelineANFIS:
                 m_hat = first_moments[index] / (1.0 - 0.9**epoch)
                 v_hat = second_moments[index] / (1.0 - 0.999**epoch)
                 parameter -= self.learning_rate * m_hat / (np.sqrt(v_hat) + 1e-8)
-            self.sigmas_[:] = np.clip(np.abs(self.sigmas_), 0.05, 2.5)
-
             validation_prediction = self.predict(x_validation)
             validation_loss = float(np.mean((validation_prediction - y_validation) ** 2))
             if validation_loss < best_loss:
@@ -885,7 +883,8 @@ class PipelineANFIS:
             if patience_counter >= self.patience:
                 break
 
-        assert best_state is not None
+        if best_state is None:
+            raise RuntimeError("PipelineANFIS не смог сохранить лучшее состояние")
         self.centers_[:], self.sigmas_[:], self.consequents_[:] = best_state
         self.validation_rmse_ = float(np.sqrt(best_loss))
         return self
@@ -893,6 +892,101 @@ class PipelineANFIS:
     def predict(self, values: np.ndarray) -> np.ndarray:
         return self._forward(np.asarray(values, dtype=float))[0]
 
+
+# Загруженная Pipeline ANFIS из Pipeline (2).ipynb.
+# Веса и scaler'ы лежат в runtime/models и являются единственным источником
+# параметров рабочей Pipeline-модели.
+class _PipelineTorchANFIS(nn.Module):
+    def __init__(self, n_rules: int, n_inputs: int) -> None:
+        super().__init__()
+        self.n_rules = n_rules
+        self.n_inputs = n_inputs
+        self.centers = nn.Parameter(torch.empty(n_rules, n_inputs))
+        self.sigmas = nn.Parameter(torch.empty(n_rules))
+        self.consequents = nn.Parameter(torch.empty(n_rules, n_inputs + 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_exp = x.unsqueeze(1)
+        c_exp = self.centers.unsqueeze(0)
+        s_exp = self.sigmas.view(1, self.n_rules, 1)
+        mu = torch.exp(-0.5 * ((x_exp - c_exp) / s_exp) ** 2)
+        weights = torch.prod(mu, dim=2)
+        weights = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        x_bias = torch.cat([torch.ones(x.shape[0], 1, device=x.device), x], dim=1)
+        rule_outputs = torch.einsum("bi,ri->br", x_bias, self.consequents)
+        return (weights * rule_outputs).sum(dim=1, keepdim=True)
+
+
+class LoadedPipelineANFIS:
+    """Pipeline ANFIS с восемью правилами из переданного ``anfis_best.pt``."""
+
+    def __init__(
+        self,
+        feature_names: Sequence[str],
+        *,
+        model_path: str | Path | None = None,
+        x_scaler_path: str | Path | None = None,
+        y_scaler_path: str | Path | None = None,
+    ) -> None:
+        model_dir = Path(__file__).resolve().parent.parent / "runtime" / "models"
+        model_path = Path(model_path or model_dir / "anfis_best.pt")
+        x_scaler_path = Path(x_scaler_path or model_dir / "x_scaler.pkl")
+        y_scaler_path = Path(y_scaler_path or model_dir / "y_scaler.pkl")
+        for path in (model_path, x_scaler_path, y_scaler_path):
+            if not path.is_file():
+                raise FileNotFoundError(f"Не найден артефакт Pipeline ANFIS: {path}")
+
+        self.feature_names = list(feature_names)
+        self.x_scaler = joblib.load(x_scaler_path)
+        self.y_scaler = joblib.load(y_scaler_path)
+        expected_inputs = int(getattr(self.x_scaler, "n_features_in_", len(self.feature_names)))
+        if expected_inputs != len(self.feature_names):
+            raise ValueError(
+                f"Scaler Pipeline ожидает {expected_inputs} входов, получено {len(self.feature_names)}"
+            )
+
+        state = torch.load(model_path, map_location="cpu", weights_only=True)
+        required = {"centers", "sigmas", "consequents"}
+        missing = required - set(state)
+        if missing:
+            raise ValueError(f"В весах Pipeline ANFIS отсутствуют поля: {', '.join(sorted(missing))}")
+        n_rules, n_inputs = tuple(state["centers"].shape)
+        if n_inputs != len(self.feature_names):
+            raise ValueError(f"Веса Pipeline ANFIS ожидают {n_inputs} входов, получено {len(self.feature_names)}")
+        if tuple(state["sigmas"].shape) != (n_rules,) or tuple(state["consequents"].shape) != (n_rules, n_inputs + 1):
+            raise ValueError("Формы весов Pipeline ANFIS не соответствуют архитектуре")
+
+        self.model = _PipelineTorchANFIS(n_rules, n_inputs)
+        self.model.load_state_dict({key: state[key] for key in required}, strict=True)
+        self.model.eval()
+        self.n_rules = int(n_rules)
+        self.centers_ = state["centers"].numpy().copy()
+        self.sigmas_ = state["sigmas"].numpy().copy()
+        self.consequents_ = state["consequents"].numpy().copy()
+        self.validation_rmse_: float | None = None
+        self.trained_epochs_ = 0
+
+    @property
+    def rule_count(self) -> int:
+        return self.n_rules
+
+    def predict(self, values: np.ndarray) -> np.ndarray:
+        values = np.asarray(values, dtype=float)
+        if values.ndim == 1:
+            values = values.reshape(1, -1)
+        if values.ndim != 2 or values.shape[1] != len(self.feature_names):
+            raise ValueError(f"Pipeline ANFIS ожидает матрицу с {len(self.feature_names)} входами")
+        # Переданные scaler'ы обучены на исходной шкале шести Pipeline-индексов.
+        # Дополнительное преобразование (x - 1) * 2 / 99 здесь не применяется:
+        # оно несовместимо с центрами и масштабами сохранённых scaler'ов.
+        scaled = self.x_scaler.transform(values)
+        with torch.no_grad():
+            prediction_scaled = self.model(torch.as_tensor(scaled, dtype=torch.float32)).numpy()
+        return self.y_scaler.inverse_transform(prediction_scaled).reshape(-1)
+
+
+# Рабочее имя сохраняем для сервиса и внешнего кода.
+PipelineANFIS = LoadedPipelineANFIS
 
 # Совместимость для внешнего кода предыдущей версии.
 ANFISRegressor = ANFIS

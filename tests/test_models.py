@@ -117,17 +117,14 @@ class ModelTests(unittest.TestCase):
                 for key in ("mae", "rmse", "smape", "mase", "directional_accuracy"):
                     self.assertTrue(math.isfinite(row[key]), f"{target['id']} {row['model']} {key}")
 
-    def test_pipeline_anfis_predicts_next_quarter_without_same_period_leakage(self) -> None:
+    def test_pipeline_anfis_matches_notebook_same_period_training(self) -> None:
         target = self.service.evaluation()["targets"][0]
         rows = target["predictions"]["validation"] + target["predictions"]["test"]
-        periods = list(self.service.bundle.fuzzy_indices.index.astype(str))
         for row in rows:
-            target_index = periods.index(row["period"])
-            self.assertEqual(row["input_period"], periods[target_index - 1])
-            self.assertNotEqual(row["input_period"], row["period"])
+            self.assertEqual(row["input_period"], row["period"])
 
         anfis_metrics = [row for row in target["metrics"] if row["model"] == "anfis"]
-        self.assertTrue(all(row["rmse"] > 1e-9 for row in anfis_metrics))
+        self.assertTrue(all(row["rmse"] < 0.01 for row in anfis_metrics))
 
     def test_six_pipeline_controls_predict_final_index(self) -> None:
         baseline = self.service.simulate_pipeline_index(horizon=4)

@@ -43,6 +43,17 @@ class DatasetStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.read("../smolensk_dataset_shared.xlsx")
 
+    def test_catalog_survives_unreadable_xlsx(self) -> None:
+        unreadable = Path(self.temp_dir.name) / "unreadable.xlsx"
+        unreadable.write_bytes(b"not an xlsx")
+
+        catalog = self.store.catalog(self.target.name)
+
+        broken = next(item for item in catalog["datasets"] if item["name"] == unreadable.name)
+        valid = next(item for item in catalog["datasets"] if item["name"] == self.target.name)
+        self.assertFalse(broken["readable"])
+        self.assertTrue(valid["readable"])
+
     def test_xlsx_can_be_uploaded_and_validated(self) -> None:
         content = self.target.read_bytes()
         uploaded = self.store.import_xlsx("uploaded.xlsx", content, load_problem_b_data)
