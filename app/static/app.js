@@ -895,28 +895,27 @@ function renderBusinessSummary(result) {
   }).join("");
 }
 
-function renderImprovementRecommendations() {
+function interpretQualityIndex(score) {
+  if (score <= 20) return { category: "Катастрофическое", description: "Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
+  if (score <= 40) return { category: "Плохое", description: "Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
+  if (score <= 60) return { category: "Удовлетворительное", description: "Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
+  if (score <= 80) return { category: "Хорошее", description: "Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
+  if (score <= 95) return { category: "Отличное", description: "Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
+  return { category: "Превосходное", description: "Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
+}
+
+function renderImprovementRecommendations(score = null) {
   const data = state.improvementRecommendations;
   if (!data) return;
   const objectiveId = document.getElementById("customerObjective").value;
   const objective = data.objectives.find(item => item.id === objectiveId) || data.objectives[0];
   const indicator = objective.indicator;
+  const interpretation = interpretQualityIndex(Number(score ?? objective.current));
   const status = document.getElementById("recommendationStatus");
-  status.className = `recommendation-status ${indicator?.tone || "neutral"}`;
-  const change = indicator?.change_percent == null ? "без сравнения" : `${signed(indicator.change_percent)}% к прошлому кварталу`;
-  status.innerHTML = indicator
-    ? `<strong>${escapeHtml(indicator.label)}: ${formatNumber(indicator.value, 2)} ${escapeHtml(indicator.unit)}</strong>
-       <span>${escapeHtml(indicator.trend)} · ${escapeHtml(change)} · индекс ${formatNumber(objective.current, 1)}/100 · ${escapeHtml(data.period)}</span>`
-    : `<strong>${escapeHtml(objective.label)}: ${formatNumber(objective.current, 2)} из 100</strong><span>${escapeHtml(objective.status)}</span>`;
-  document.getElementById("recommendationList").innerHTML = objective.items.map(item => {
-    const effect = item.expected_effect_points == null
-      ? "Прямой показатель канонических JSON-правил"
-      : `Модельный ориентир: ${signed(item.expected_effect_points, 3)} п.п. при стандартном воздействии`;
-    return `<li><span class="recommendation-rank">${item.rank}</span><div><strong>${escapeHtml(item.label)}</strong>
-      <p>${escapeHtml(item.action)}</p><small>${escapeHtml(item.relation)} · ${escapeHtml(effect)}</small></div>
-      <button class="mini-button recommendation-action" type="button" data-factor="${escapeHtml(item.factor)}">Проверить меру</button></li>`;
-  }).join("");
-  document.getElementById("recommendationMethodology").textContent = data.methodology_note;
+  status.className = "recommendation-status neutral";
+  status.innerHTML = `<strong>${interpretation.category}</strong><span>${interpretation.description}</span><span>${interpretation.action}</span>`;
+  document.getElementById("recommendationList").innerHTML = "";
+  document.getElementById("recommendationMethodology").textContent = "";
 }
 
 function applyRecommendedMeasure(factor) {
@@ -1008,7 +1007,7 @@ async function runScenario() {
     state.budgetAnalysis = result.budget_analysis;
     state.improvementRecommendations = result.improvement_recommendations;
     renderBudgetAnalysis();
-    renderImprovementRecommendations();
+    renderImprovementRecommendations(result.summary.integrated_mobility.scenario);
     document.getElementById("scenarioResultTitle").textContent = result.scenario.label;
     document.getElementById("scenarioExplanation").innerHTML = result.explanation.map(item => `<li>${item}</li>`).join("");
     document.getElementById("appliedImpulses").innerHTML = result.applied_impulses.length
@@ -1107,6 +1106,8 @@ async function initializeApplication() {
       : state.datasets.active;
     document.getElementById("datasetSelect").value = initialDataset;
     await loadDatasetDetail(initialDataset);
+    // Дождаться первого layout-прохода браузера: Cytoscape иначе получает нулевой контейнер.
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
     await renderFcm();
     await runScenario();
   } catch (error) {
