@@ -30,6 +30,18 @@ class ModelTests(unittest.TestCase):
             adapted = float(self.service.weights.adapted.loc[source, target])
             self.assertEqual(np.sign(adapted), np.sign(expert), f"{source} -> {target}")
 
+    def test_graph_database_additions_keep_expected_directions(self) -> None:
+        expert = self.service.weights.expert
+        expected = {
+            ("road_budget_execution", "defect_response"): 0.40,
+            ("road_repair", "traffic_safety"): 0.40,
+            ("defect_response", "transport_regularity"): 0.60,
+            ("average_speed", "transport_regularity"): 0.40,
+            ("average_speed", "traffic_safety"): -0.60,
+        }
+        for edge, weight in expected.items():
+            self.assertAlmostEqual(float(expert.loc[edge]), weight, msg=f"{edge[0]} -> {edge[1]}")
+
     def test_anfis_is_small_reproducible_and_finite(self) -> None:
         for target, model in self.service.anfis_models.items():
             self.assertLessEqual(len(model.feature_names), 4, target)
