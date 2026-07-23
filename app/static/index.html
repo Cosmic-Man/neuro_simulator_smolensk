@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Локальный нейросимулятор транспортной доступности и безопасности Смоленска">
   <title>Нейросимулятор Смоленска · Проблема Б</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260723-scenario-align">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260723-layout-accordion">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260723-map-scenario-step1"></script>
+  <script defer src="/assets/app.js?v=20260723-layout-accordion"></script>
 </head>
 <body>
   <span id="nodeCount" hidden></span><span id="edgeCount" hidden></span><span id="scenarioCount" hidden></span>
@@ -23,9 +23,14 @@
         <a href="#secondaryAccordion">FCM</a>
         <a href="#map">Граф связей</a>
         <a href="#datasets">Данные</a>
+        <a href="#technicalAppendix">Графики</a>
       </div>
       <div class="topbar-actions">
         <div id="apiStatus" class="status-pill" role="status" aria-label="Подключение"><span></span></div>
+        <button id="layoutManagerToggle" class="topbar-settings" type="button"
+                aria-expanded="false" aria-controls="layoutManager">
+          <span aria-hidden="true">☷</span><strong>Настройки</strong>
+        </button>
       </div>
     </nav>
 
@@ -241,22 +246,6 @@
             <ol id="recommendationList" class="recommendation-list"></ol>
             <p id="recommendationMethodology" class="methodology-note"></p>
           </article>
-          <article id="budgetPanel" class="panel budget-panel">
-            <div class="panel-toolbar">
-              <div><span class="panel-kicker">Куда направить ресурсы</span><h3>Модельные бюджетные приоритеты <span class="info-tip" tabindex="0" data-tooltip="Это сравнение одинаковых модельных воздействий, а не финансовый ROI. Оно показывает, какое направление сильнее поддерживает выбранную выше проблему.">?</span></h3></div>
-            </div>
-            <p id="budgetRecommendation" class="budget-recommendation">Запустите сценарий для сравнения направлений.</p>
-            <div class="table-wrap">
-              <table><thead><tr><th>Направление</th><th>Безопасность</th><th>Регулярность</th><th>Доступность</th><th>Общий индекс</th></tr></thead><tbody id="budgetBody"></tbody></table>
-            </div>
-            <p id="budgetMethodology" class="methodology-note">Рейтинг использует одинаковое модельное воздействие и не является финансовым ROI.</p>
-          </article>
-          <article class="panel explanation-panel">
-            <span class="panel-kicker">Объяснение результата</span>
-            <h3 id="scenarioResultTitle">Инерционный сценарий</h3>
-            <ul id="scenarioExplanation"><li>Запустите расчёт, чтобы увидеть интерпретацию.</li></ul>
-            <div id="appliedImpulses" class="tag-row"></div>
-          </article>
         </div>
       </div>
     </section>
@@ -320,17 +309,37 @@
       </div>
     </section>
 
-    <section id="datasets" class="section-block">
+    <section id="datasets" class="section-block"
+             data-layout-module-container
+             data-layout-group-id="dataset-workflow"
+             data-layout-group-label="Интерфейсы работы с данными"
+             data-layout-group-description="Переобучение, выбор XLSX, редактор квартала и быстрый просмотр">
       <div class="section-heading">
         <div><span class="section-index">04</span><h2>Данные для расчёта</h2></div>
       </div>
-      <article class="panel retraining-card">
+      <article class="panel retraining-card"
+               data-layout-module="model-retraining"
+               data-layout-label="Статус и переобучение модели"
+               data-layout-type="Интерфейс данных">
         <div>
-          <h3>Обновить модель после нового квартала</h3>
+          <span class="panel-kicker">Следующий цикл решений</span>
+          <h3>Обновить модель после нового квартала <span class="info-tip" tabindex="0" data-tooltip="Рабочие ANFIS-модели и веса FCM заново обучаются на всех подтверждённых кварталах.">?</span></h3>
+          <p id="modelTrainingStatus">Проверяем, до какого квартала обучена модель…</p>
         </div>
+        <button id="retrainModels" class="primary-button" type="button">Переобучить на новых данных</button>
       </article>
-      <div class="dataset-layout">
-        <article class="panel dataset-selector-card">
+      <div class="dataset-layout"
+           data-layout-module="dataset-catalog-editor"
+           data-layout-label="Выбор XLSX и редактор квартала"
+           data-layout-type="Интерфейс данных"
+           data-layout-module-container
+           data-layout-group-id="dataset-panels"
+           data-layout-group-label="Панели XLSX"
+           data-layout-group-description="Источник расчёта и редактор 31 показателя">
+        <article class="panel dataset-selector-card"
+                 data-layout-module="dataset-selector"
+                 data-layout-label="Источник расчёта"
+                 data-layout-type="Панель XLSX">
           <div class="dataset-upload">
             <input id="datasetFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             <button id="uploadDataset" class="primary-button" type="button">Загрузить XLSX и пересчитать</button>
@@ -343,7 +352,10 @@
           </div>
           <div id="datasetSummary" class="dataset-summary"></div>
         </article>
-        <article class="panel dataset-editor-card">
+        <article class="panel dataset-editor-card"
+                 data-layout-module="dataset-editor"
+                 data-layout-label="Редактор квартала"
+                 data-layout-type="Панель XLSX">
           <div class="panel-toolbar toolbar-wrap">
             <div><span class="panel-kicker">Редактор квартала</span><h3>Проверить или изменить 31 показатель</h3></div>
             <label>Строка<select id="datasetRowSelect"></select></label>
@@ -359,20 +371,32 @@
           </details>
         </article>
       </div>
+      <details class="panel dataset-preview-card"
+               data-layout-module="dataset-preview"
+               data-layout-label="Последние строки XLSX"
+               data-layout-type="Интерфейс данных">
+        <summary>Показать последние строки выбранного файла</summary>
+        <div class="table-wrap">
+          <table>
+            <thead id="datasetPreviewHead"></thead>
+            <tbody id="datasetPreviewBody"></tbody>
+          </table>
+        </div>
+      </details>
     </section>
 
     <section id="technicalAppendix" class="section-block technical-appendix">
       <div class="section-heading">
-        <div><span class="section-index">05</span><h2>Графики и методика</h2></div>
-        <p>Дополнительная аналитика</p>
+        <div><span class="section-index">05–22</span><h2>Архив графиков и интерфейсов</h2></div>
+        <p>Уникальные экраны из всей истории Git и визуализации notebook</p>
       </div>
       <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="technicalAppendixContent">
-        <span><strong class="accordion-action">Развернуть графики</strong><small>Диаграмма размаха, функции принадлежности, target, validation, test и метрики</small></span><b aria-hidden="true">⌄</b>
+        <span><strong class="accordion-action">Развернуть разделы 05–22</strong><small>Текущая аналитика, история Git, полный набор графиков и музей интерфейсов</small></span><b aria-hidden="true">⌄</b>
       </button>
       <div id="technicalAppendixContent" class="accordion-content technical-stack" hidden>
         <section id="notebookCharts" class="technical-notebook-section">
           <div class="section-heading compact-heading">
-            <div><span class="section-index">N</span><h2>Контрольные графики notebook</h2></div>
+            <div><span class="section-index">10</span><h2>Контрольные графики notebook</h2></div>
             <p>Тот же порядок проверки: target → validation → test</p>
           </div>
           <div class="notebook-chart-grid">
@@ -385,14 +409,18 @@
               <div id="notebookValidationPlot" class="plot analysis-plot"></div>
             </article>
             <article class="panel chart-panel">
-              <span class="panel-kicker">Pipeline.ipynb · test</span><h3>ANFIS и baseline</h3>
+              <span class="panel-kicker">Pipeline.ipynb · test</span><h3>Факт и прогноз ANFIS</h3>
+              <div id="notebookTestAnfisPlot" class="plot analysis-plot"></div>
+            </article>
+            <article class="panel chart-panel notebook-wide">
+              <span class="panel-kicker">Pipeline.ipynb · сравнение</span><h3>ANFIS и два baseline</h3>
               <div id="notebookTestPlot" class="plot analysis-plot"></div>
             </article>
           </div>
         </section>
-        <section class="technical-notebook-section">
+        <section id="scenarioPlots" class="technical-notebook-section">
           <div class="section-heading compact-heading">
-            <div><span class="section-index">S</span><h2>Графики сценарного прогноза</h2></div>
+            <div><span class="section-index">11</span><h2>Графики сценарного прогноза</h2></div>
             <p>Подробная траектория после расчёта лаборатории</p>
           </div>
           <div class="scenario-chart-grid">
@@ -402,12 +430,522 @@
             <article class="panel mini-chart-panel"><span class="panel-kicker">Итоговый индекс</span><div id="integratedPlot" class="plot"></div></article>
           </div>
         </section>
+        <section id="recoveredCharts" class="technical-notebook-section recovered-charts">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">12</span><h2>Архив графиков Git и notebook</h2></div>
+            <p>Восстановлено по всей истории, включая версии с Docker и без Docker</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Docker: <code>ae7946d</code>, <code>0bff515</code>, <code>ee11608</code></span>
+            <span>Обычные коммиты: <code>5f8cc85</code>, <code>13934dd</code>, <code>161c533</code>, <code>b08e7c1</code>, <code>c029962</code></span>
+            <span>Notebook: <code>Pipeline (2).ipynb</code>, исторический <code>Pipeline.ipynb</code> и FuzzyConvolution</span>
+          </div>
+
+          <div class="recovered-accordion-list">
+            <details class="recovered-chart-group">
+              <summary>
+                <span><strong>Диаграммы размаха Pipeline</strong><small>Все тематические boxplot из исходного и исторического notebook</small></span>
+                <b aria-hidden="true">⌄</b>
+              </summary>
+              <div id="archiveBoxplotGrid" class="archive-chart-grid"></div>
+            </details>
+
+            <details class="recovered-chart-group">
+              <summary>
+                <span><strong>Распределения и взаимосвязи</strong><small>Итоговый индекс, корреляции, вклад признаков и плотности</small></span>
+                <b aria-hidden="true">⌄</b>
+              </summary>
+              <div class="archive-chart-grid archive-chart-grid-two">
+                <article class="panel chart-panel">
+                  <span class="panel-kicker">FuzzyConvolution · Гульдар</span><h3>Распределение итогового индекса</h3>
+                  <div id="archiveIndexDistributionPlot" class="plot analysis-plot"></div>
+                </article>
+                <article class="panel chart-panel">
+                  <span class="panel-kicker">История Git</span><h3>Корреляционная матрица индексов</h3>
+                  <div id="archiveCorrelationPlot" class="plot analysis-plot"></div>
+                </article>
+                <article class="panel chart-panel">
+                  <span class="panel-kicker">История Git</span><h3>Связь индексов с target</h3>
+                  <div id="archiveFeatureImportancePlot" class="plot analysis-plot"></div>
+                </article>
+                <article class="panel chart-panel">
+                  <span class="panel-kicker">История Git</span><h3>Плотность распределения индексов</h3>
+                  <div id="archiveDensityPlot" class="plot analysis-plot"></div>
+                </article>
+              </div>
+            </details>
+
+            <details class="recovered-chart-group">
+              <summary>
+                <span><strong>Гистограммы всех 31 показателя</strong><small>Среднее, медиана и полное распределение каждого столбца XLSX</small></span>
+                <b aria-hidden="true">⌄</b>
+              </summary>
+              <div id="archiveFeatureHistogramGrid" class="archive-chart-grid archive-histogram-grid"></div>
+            </details>
+
+            <details class="recovered-chart-group">
+              <summary>
+                <span><strong>Все функции принадлежности</strong><small>Каждый вход и выход восьми нечётких свёрток, без скрытия за селектором</small></span>
+                <b aria-hidden="true">⌄</b>
+              </summary>
+              <div id="archiveMembershipList" class="archive-membership-list"></div>
+            </details>
+          </div>
+        </section>
+
+        <section id="legacyHeroJourney" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">13</span><h2>Первая витрина и маршрут заказчика</h2></div>
+            <p>Стартовый экран из ранних версий и четырёхшаговый путь из Docker-эпохи</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Витрина: <code>5f8cc85</code>, <code>13934dd</code></span>
+            <span>Маршрут: <code>ee11608</code></span>
+          </div>
+          <div class="legacy-interface-stage legacy-hero-stage"
+               data-layout-module-container
+               data-layout-group-id="legacy-hero-modules"
+               data-layout-group-label="Ранняя витрина"
+               data-layout-group-description="Навигация, hero-карточка метода и маршрут заказчика">
+            <div class="legacy-hero-shell"
+                 data-layout-module="legacy-hero"
+                 data-layout-label="Hero FCM × ANFIS"
+                 data-layout-type="Исторический интерфейс">
+              <nav class="legacy-topbar" aria-label="Архивная навигация">
+                <a class="brand" href="#legacyHeroJourney">
+                  <span class="brand-mark">СМ</span>
+                  <span><strong>Нейросимулятор</strong><small>Смоленск · проблема Б</small></span>
+                </a>
+                <div class="legacy-nav-links">
+                  <a href="#scenarios">Лаборатория</a>
+                  <a href="#map">Карта</a>
+                  <a href="#datasets">Данные</a>
+                </div>
+                <span class="legacy-online"><i></i>система готова</span>
+              </nav>
+              <div class="legacy-hero-grid">
+                <div>
+                  <div class="eyebrow">Первая версия интерфейса</div>
+                  <h3 class="legacy-display-title">Транспортная доступность<br><em>и безопасность города</em></h3>
+                  <p class="hero-copy">Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Управляющие воздействия сразу связываются с прогнозом.</p>
+                  <div class="hero-actions">
+                    <a class="primary-button" href="#scenarios">Запустить сценарий</a>
+                    <a class="text-button" href="#map">Открыть карту связей <span>→</span></a>
+                  </div>
+                </div>
+                <aside class="method-card">
+                  <div class="method-badge">FCM × ANFIS</div>
+                  <p>Экспертные причинные связи уточняются закономерностями данных, но сохраняют исходный смысл и знак.</p>
+                  <dl>
+                    <div><dt id="legacyNodeCount">—</dt><dd>узлов</dd></div>
+                    <div><dt id="legacyEdgeCount">—</dt><dd>связей</dd></div>
+                    <div><dt id="legacyScenarioCount">—</dt><dd>сценариев</dd></div>
+                  </dl>
+                </aside>
+              </div>
+            </div>
+            <section class="decision-path panel"
+                     data-layout-module="decision-path"
+                     data-layout-label="Маршрут заказчика"
+                     data-layout-type="Исторический интерфейс"
+                     aria-label="Как заказчику работать с системой">
+              <div><span class="panel-kicker">Маршрут заказчика</span><h3>От проблемного показателя к проверяемому решению</h3></div>
+              <ol>
+                <li><strong>1. Выберите цель</strong><span>Укажите, что требуется улучшить, и получите приоритетные меры.</span></li>
+                <li><strong>2. Проверьте сценарий</strong><span>Сравните прогноз с инерционным вариантом.</span></li>
+                <li><strong>3. Сверьте ресурсы</strong><span>Посмотрите бюджетное направление с самым сильным эффектом.</span></li>
+                <li><strong>4. Уточните данные</strong><span>Проверьте XLSX и добавьте следующий квартал.</span></li>
+              </ol>
+            </section>
+          </div>
+        </section>
+
+        <section id="legacyAuthProfile" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">14</span><h2>Вход, профиль и управление сессией</h2></div>
+            <p>Интерфейс авторизации из Docker-версий; работает как безопасная локальная демонстрация</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>PostgreSQL + роли: <code>ae7946d</code></span>
+            <span>Пользовательский поток: <code>ee11608</code></span>
+          </div>
+          <div class="legacy-auth-grid"
+               data-layout-module-container
+               data-layout-group-id="legacy-auth-modules"
+               data-layout-group-label="Авторизация и профиль"
+               data-layout-group-description="Экран входа и меню активной сессии">
+            <form id="legacyLoginForm" class="panel legacy-auth-card"
+                  data-layout-module="legacy-login"
+                  data-layout-label="Экран входа"
+                  data-layout-type="Исторический интерфейс">
+              <a class="brand" href="#legacyAuthProfile">
+                <span class="brand-mark">СМ</span>
+                <span><strong>Нейросимулятор</strong><small>Демонстрационный вход</small></span>
+              </a>
+              <div><span class="panel-kicker">Доступ к системе</span><h3>Вход</h3></div>
+              <label>Логин<input id="legacyLoginUsername" autocomplete="username" value="observer.demo" required></label>
+              <label>Пароль<input id="legacyLoginPassword" type="password" autocomplete="current-password" value="demonstration" required></label>
+              <p id="legacyLoginStatus" class="form-error" role="status"></p>
+              <button class="primary-button full-button" type="submit">Войти в демо-режим</button>
+              <small>Макет не отправляет логин и пароль на сервер.</small>
+            </form>
+            <article class="panel legacy-session-card"
+                     data-layout-module="legacy-profile"
+                     data-layout-label="Профиль и сессия"
+                     data-layout-type="Исторический интерфейс">
+              <nav class="legacy-session-topbar">
+                <a class="brand" href="#legacyAuthProfile">
+                  <span class="brand-mark">СМ</span>
+                  <span><strong>Нейросимулятор</strong><small>Защищённая область</small></span>
+                </a>
+                <div class="legacy-user-menu">
+                  <div><strong id="legacyCurrentUserName">Ирина Наблюдатель</strong><small id="legacyCurrentUserRole">Наблюдатель</small></div>
+                  <button id="legacyChangePassword" class="mini-button" type="button">Сменить пароль</button>
+                  <button id="legacyLogout" class="mini-button" type="button">Выйти</button>
+                </div>
+              </nav>
+              <div class="legacy-session-body">
+                <span class="panel-kicker">Активная сессия</span>
+                <h3>Доступ определяет интерфейс</h3>
+                <p>Наблюдатель видит готовые сценарии, пользователь редактирует воздействия, администратор управляет аккаунтами и аудитом.</p>
+                <div class="legacy-permission-tags">
+                  <span>Просмотр результатов</span><span>Сохранённые сценарии</span><span>Смена пароля</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="legacyObserverDashboard" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">15</span><h2>Ролевые режимы и dashboard наблюдателя</h2></div>
+            <p>Переключатель воспроизводит три варианта одной страницы без обращения к старому API</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Роли: <code>ae7946d</code></span>
+            <span>Dashboard наблюдателя: <code>4724fa1</code></span>
+          </div>
+          <div class="legacy-role-switcher" role="group" aria-label="Архивный режим роли">
+            <button class="mini-button active" type="button" data-legacy-role="observer" aria-pressed="true">Наблюдатель</button>
+            <button class="mini-button" type="button" data-legacy-role="user" aria-pressed="false">Пользователь</button>
+            <button class="mini-button" type="button" data-legacy-role="admin" aria-pressed="false">Администратор</button>
+          </div>
+          <article id="legacyRoleDashboard" class="panel legacy-role-dashboard" data-role="observer">
+            <div class="legacy-dashboard-topbar">
+              <a class="brand" href="#legacyObserverDashboard">
+                <span class="brand-mark">СМ</span>
+                <span><strong>Нейросимулятор</strong><small id="legacyRoleTopbarLabel">Режим наблюдателя</small></span>
+              </a>
+              <span id="legacyRoleBadge" class="legacy-role-badge">Только просмотр</span>
+            </div>
+            <div class="legacy-dashboard-hero">
+              <div>
+                <span id="legacyRoleEyebrow" class="eyebrow">Режим наблюдателя</span>
+                <h3 id="legacyRoleTitle" class="legacy-display-title">Доступные транспортные<br><em>сценарии и результаты</em></h3>
+                <p id="legacyRoleCopy">Выберите готовый сценарий, изучите ожидаемый эффект и объяснение. Редактирование данных и воздействий отключено.</p>
+              </div>
+              <div id="legacyRolePermissions" class="legacy-role-permissions"></div>
+            </div>
+            <div class="legacy-dashboard-sections">
+              <span>Цель</span><span>Сценарии</span><span>Текущий индекс</span><span>FCM</span>
+              <span>История</span><span>Модели</span><span>Графики</span><span>Данные</span><span>Методика</span>
+            </div>
+          </article>
+        </section>
+
+        <section id="legacyAdminPanel" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">16</span><h2>Администрирование пользователей и аудит</h2></div>
+            <p>Локально интерактивная копия административного экрана Docker-версии</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Пользователи и журнал: <code>ae7946d</code>, <code>ee11608</code></span>
+          </div>
+          <div class="admin-grid"
+               data-layout-module-container
+               data-layout-group-id="legacy-admin-modules"
+               data-layout-group-label="Административные интерфейсы"
+               data-layout-group-description="Создание аккаунта, таблица ролей и аудит">
+            <article class="panel admin-panel-card"
+                     data-layout-module="legacy-create-user"
+                     data-layout-label="Создание пользователя"
+                     data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">Новый аккаунт</span><h3>Создать пользователя</h3>
+              <form id="legacyCreateUserForm" class="admin-form">
+                <label>Логин<input id="legacyNewUsername" required minlength="3" maxlength="64" placeholder="smolensk.user"></label>
+                <label>Имя<input id="legacyNewDisplayName" required maxlength="120" placeholder="Имя пользователя"></label>
+                <label>Временный пароль<input id="legacyNewPassword" type="password" required minlength="10" placeholder="Не менее 10 символов"></label>
+                <label>Роль<select id="legacyNewRole"><option value="observer">Наблюдатель</option><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label>
+                <button class="primary-button" type="submit">Создать локально</button>
+              </form>
+            </article>
+            <article class="panel admin-panel-card admin-users-card"
+                     data-layout-module="legacy-users"
+                     data-layout-label="Пользователи и роли"
+                     data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">Контроль доступа</span><h3>Пользователи</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Пользователь</th><th>Роль</th><th>Активен</th><th>Действия</th></tr></thead>
+                  <tbody id="legacyUsersBody">
+                    <tr>
+                      <td><strong>Администратор проекта</strong><span class="table-subline">admin.smolensk</span></td>
+                      <td><select aria-label="Роль администратора"><option>Администратор</option><option>Пользователь</option><option>Наблюдатель</option></select></td>
+                      <td><input type="checkbox" checked aria-label="Аккаунт активен"></td>
+                      <td><button class="mini-button" type="button" data-legacy-admin-action="reset">Сбросить пароль</button></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Ирина Наблюдатель</strong><span class="table-subline">observer.demo</span></td>
+                      <td><select aria-label="Роль наблюдателя"><option>Наблюдатель</option><option>Пользователь</option><option>Администратор</option></select></td>
+                      <td><input type="checkbox" checked aria-label="Аккаунт активен"></td>
+                      <td><button class="mini-button" type="button" data-legacy-admin-action="reset">Сбросить пароль</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <article class="panel admin-panel-card audit-card"
+                   data-layout-module-container
+                   data-layout-group-id="legacy-audit-module"
+                   data-layout-group-label="Журнал действий"
+                   data-layout-group-description="Отдельная панель аудита">
+            <div data-layout-module="legacy-audit" data-layout-label="Последние действия" data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">Аудит</span><h3>Последние действия</h3>
+              <div id="legacyAuditList" class="audit-list">
+                <div class="audit-row"><time>сегодня · 10:42</time><strong>Сценарий открыт наблюдателю</strong><span>admin.smolensk</span></div>
+                <div class="audit-row"><time>сегодня · 10:17</time><strong>Активирован новый XLSX</strong><span>analyst.demo</span></div>
+                <div class="audit-row"><time>вчера · 18:05</time><strong>Создан пользователь</strong><span>admin.smolensk</span></div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section id="legacyScenarioSharing" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">17</span><h2>Владение и совместный доступ к сценарию</h2></div>
+            <p>Сохранение JSON, владелец, удаление и список наблюдателей</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Сценарии с владельцем: <code>ae7946d</code></span>
+            <span>Обратное перераспределение: <code>b08e7c1</code>, <code>b7ef265</code></span>
+          </div>
+          <div class="legacy-sharing-grid"
+               data-layout-module-container
+               data-layout-group-id="legacy-sharing-modules"
+               data-layout-group-label="Совместная работа со сценариями"
+               data-layout-group-description="Карточка владельца и матрица доступа">
+            <article class="panel legacy-scenario-library"
+                     data-layout-module="legacy-scenario-owner"
+                     data-layout-label="Библиотека и владелец"
+                     data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">Библиотека сценариев</span><h3>Сохранённый сценарий</h3>
+              <label>Сценарий
+                <select id="legacySharedScenario">
+                  <option value="priority">Приоритет общественного транспорта</option>
+                  <option value="digital">Цифровая мобильность</option>
+                  <option value="reallocation">Обратное перераспределение бюджета</option>
+                </select>
+              </label>
+              <p id="legacyScenarioOwner" class="scenario-owner">Владелец: analyst.demo · можно редактировать</p>
+              <div class="scenario-actions">
+                <button id="legacySaveSharedScenario" class="mini-button" type="button">Сохранить JSON</button>
+                <button id="legacyExportSharedScenario" class="mini-button" type="button">Выгрузить JSON</button>
+                <button id="legacyDeleteSharedScenario" class="mini-button danger-button" type="button">Удалить</button>
+              </div>
+              <p id="legacySharedScenarioStatus" class="legacy-inline-status">Изменения пока не сохранены.</p>
+            </article>
+            <article class="panel scenario-sharing"
+                     data-layout-module="legacy-scenario-sharing"
+                     data-layout-label="Доступ наблюдателей"
+                     data-layout-type="Исторический интерфейс">
+              <div class="sharing-heading"><strong>Доступ наблюдателей</strong><small>Кому показать этот JSON</small></div>
+              <div id="legacyObserverShareList" class="observer-share-list">
+                <label class="observer-share-item"><input type="checkbox" checked><span><strong>Ирина Наблюдатель</strong><small>observer.demo</small></span></label>
+                <label class="observer-share-item"><input type="checkbox"><span><strong>Транспортный комитет</strong><small>committee.viewer</small></span></label>
+                <label class="observer-share-item"><input type="checkbox" checked><span><strong>Проектный офис</strong><small>project.office</small></span></label>
+                <label class="observer-share-item"><input type="checkbox"><span><strong>Городской аналитик</strong><small>city.analytics</small></span></label>
+              </div>
+              <button id="legacySaveScenarioShares" class="primary-button" type="button">Сохранить доступ</button>
+              <p id="legacyShareStatus" class="legacy-inline-status" role="status">Доступ открыт двум наблюдателям.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="legacyExpertIndices" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">18</span><h2>Два экспертных baseline Гульдар</h2></div>
+            <p>Возвращена компоновка с линейным и иерархическим индексами из ранней ветки</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Линейный baseline: <code>13934dd</code></span>
+            <span>Двойная карточка: <code>161c533</code></span>
+            <span>Иерархический-only: <code>d09e80a</code></span>
+          </div>
+          <div id="legacyExpertIndexCards" class="expert-index-grid"></div>
+          <div class="legacy-contribution-grid"
+               data-layout-module-container
+               data-layout-group-id="legacy-expert-modules"
+               data-layout-group-label="Экспертные индексы"
+               data-layout-group-description="Две исторические модели вклада">
+            <article class="panel contribution-panel"
+                     data-layout-module="legacy-linear-index"
+                     data-layout-label="Линейный индекс Гульдар"
+                     data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">31 исходный показатель → один baseline</span>
+              <h3>Линейный индекс Гульдар</h3>
+              <p class="chart-description">Сам расчёт снят из текущего API; структура панели восстановлена, а полосы показывают доступные веса итоговой свёртки Pipeline.</p>
+              <div id="legacyLinearContributions" class="contribution-list"></div>
+            </article>
+            <article class="panel contribution-panel"
+                     data-layout-module="legacy-hierarchical-index"
+                     data-layout-label="Иерархический индекс Гульдар"
+                     data-layout-type="Исторический интерфейс">
+              <span class="panel-kicker">8 нечётких индексов → один baseline</span>
+              <h3>Иерархический индекс Гульдар</h3>
+              <div id="legacyHierarchicalContributions" class="contribution-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="legacyScenarioWorkbench" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">19</span><h2>Полный сценарный пульт</h2></div>
+            <p>Рабочее зеркало скрытых сейчас настроек: пресеты, модель, горизонт, JSON и все шесть индексов</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>17 пресетов и горизонты: <code>b08e7c1</code>, <code>b7ef265</code></span>
+            <span>JSON: <code>8a81461</code></span>
+            <span>Индексный режим: <code>1a22a0b</code>, <code>9c153ee</code></span>
+          </div>
+          <div class="legacy-workbench-layout">
+            <aside class="panel legacy-scenario-controls">
+              <div><span class="panel-kicker">Архивный полный режим</span><h3>Управляющие воздействия</h3></div>
+              <label>Готовый сценарий<select id="legacyScenarioPreset"></select></label>
+              <p id="legacyScenarioDescription" class="control-description">Сценарии загружаются вместе с моделью…</p>
+              <p id="legacyWorkbenchOwner" class="scenario-owner">Встроенный сценарий · доступен всем ролям</p>
+              <div class="scenario-actions">
+                <input id="legacyScenarioSaveName" type="text" maxlength="100" placeholder="Название сценария">
+                <button id="legacyUploadScenario" class="mini-button" type="button">Загрузить JSON</button>
+                <button id="legacySaveScenario" class="mini-button" type="button">Сохранить JSON</button>
+                <button id="legacyExportScenario" class="mini-button" type="button">Выгрузить JSON</button>
+              </div>
+              <div class="control-row">
+                <label>Модель<select id="legacyScenarioMode"><option value="adapted">FCM + ANFIS</option><option value="expert">Экспертная FCM</option></select></label>
+                <label>Горизонт<select id="legacyScenarioHorizon"><option value="1">1 квартал</option><option value="2">2 квартала</option><option value="4">4 квартала</option><option value="8">8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
+              </div>
+              <div class="slider-heading"><span>Шесть индексов <small>от 0 до 100</small></span><button id="legacyResetSliders" class="mini-button" type="button">Сбросить</button></div>
+              <div id="legacyScenarioSliders" class="slider-list legacy-slider-list"></div>
+              <button id="legacyRunScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
+            </aside>
+            <article class="panel legacy-workbench-guide">
+              <span class="panel-kicker">Эволюция сценарного интерфейса</span>
+              <h3>Все режимы в одном пульте</h3>
+              <ol class="legacy-evolution-list">
+                <li><strong>Экспертные импульсы</strong><span>Первый интерфейс менял факторы FCM от −0,30 до +0,30.</span></li>
+                <li><strong>Перераспределение</strong><span>Появились прямые и обратные бюджетные сценарии.</span></li>
+                <li><strong>Совместная работа</strong><span>JSON, владелец и доступ наблюдателей.</span></li>
+                <li><strong>Локальный XLSX</strong><span>Сценарий стал принимать рассчитанные нечёткие индексы.</span></li>
+                <li><strong>Автопересчёт</strong><span>Результат обновляется после выбора и изменения ползунков.</span></li>
+              </ol>
+              <div class="legacy-workbench-status">
+                <span>Связь с текущей моделью</span><strong id="legacyWorkbenchSync">Ожидание данных…</strong>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="legacyRecommendationsInterface" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">20</span><h2>Пять мер для выбранной цели</h2></div>
+            <p>Пять управленческих мер и отдельный выбор цели из полного клиентского workflow</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Рекомендации заказчику: <code>ee11608</code></span>
+          </div>
+          <article class="panel recommendations-panel legacy-recommendations-panel">
+            <div class="panel-toolbar toolbar-wrap">
+              <div><span class="panel-kicker">Что улучшать в первую очередь</span><h3>Пять предложений для выбранной цели</h3></div>
+              <label>Цель улучшения<select id="legacyRecommendationObjective"></select></label>
+            </div>
+            <div id="legacyRecommendationStatus" class="recommendation-status">После расчёта здесь появятся текущая оценка и пять мер.</div>
+            <ol id="legacyRecommendationList" class="recommendation-list"></ol>
+            <p id="legacyRecommendationMethodology" class="methodology-note"></p>
+          </article>
+        </section>
+
+        <section id="legacyBudgetInterface" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">21</span><h2>Бюджетный приоритизатор</h2></div>
+            <p>Живой результат сценария, возвращённый из полного клиентского workflow</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Бизнес-цели и бюджет: <code>ee11608</code></span>
+          </div>
+          <article id="budgetPanel" class="panel budget-panel">
+            <div class="panel-toolbar">
+              <div><span class="panel-kicker">Куда направить ресурсы</span><h3>Модельные бюджетные приоритеты <span class="info-tip" tabindex="0" data-tooltip="Это сравнение одинаковых модельных воздействий, а не финансовый ROI. Оно показывает, какое направление сильнее поддерживает выбранную проблему.">?</span></h3></div>
+              <label>Бизнес-цель
+                <select id="legacyBudgetObjective">
+                  <option value="integrated_mobility">Сбалансированный результат</option>
+                  <option value="safety">Безопасность</option>
+                  <option value="regularity">Регулярность</option>
+                  <option value="accessibility">Доступность</option>
+                </select>
+              </label>
+            </div>
+            <p id="budgetRecommendation" class="budget-recommendation">Запустите сценарий для сравнения направлений.</p>
+            <div class="table-wrap">
+              <table><thead><tr><th>Направление</th><th>Безопасность</th><th>Регулярность</th><th>Доступность</th><th>Общий индекс</th></tr></thead><tbody id="budgetBody"></tbody></table>
+            </div>
+            <p id="budgetMethodology" class="methodology-note">Рейтинг использует одинаковое модельное воздействие и не является финансовым ROI.</p>
+          </article>
+        </section>
+
+        <section id="legacyExplanationInterface" class="technical-notebook-section legacy-interface-section">
+          <div class="section-heading compact-heading">
+            <div><span class="section-index">22</span><h2>Полное объяснение сценария</h2></div>
+            <p>Название, причинная интерпретация и фактически применённые импульсы</p>
+          </div>
+          <div class="chart-source-ledger">
+            <span>Объяснение результата: <code>5f8cc85</code> → <code>ee11608</code></span>
+          </div>
+          <article class="panel explanation-panel">
+            <span class="panel-kicker">Объяснение результата</span>
+            <h3 id="scenarioResultTitle">Инерционный сценарий</h3>
+            <ul id="scenarioExplanation"><li>Запустите расчёт, чтобы увидеть интерпретацию.</li></ul>
+            <div id="appliedImpulses" class="tag-row"></div>
+          </article>
+        </section>
       </div>
     </section>
 
   </main>
 
   </div>
+
+  <div id="layoutManagerBackdrop" class="layout-manager-backdrop" hidden></div>
+  <aside id="layoutManager" class="layout-manager" role="dialog" aria-modal="true"
+         aria-labelledby="layoutManagerTitle" hidden>
+    <div class="layout-manager-header">
+      <div>
+        <span class="panel-kicker">Конструктор страницы</span>
+        <h2 id="layoutManagerTitle">Порядок и видимость</h2>
+      </div>
+      <button id="layoutManagerClose" class="layout-manager-close" type="button" aria-label="Закрыть меню">×</button>
+    </div>
+    <div class="layout-manager-toolbar">
+      <label for="layoutManagerSearch">Найти раздел или график</label>
+      <input id="layoutManagerSearch" type="search" placeholder="Например: ANFIS, история, FCM">
+      <button id="layoutManagerReset" class="mini-button" type="button">Сбросить расположение</button>
+    </div>
+    <p class="layout-manager-note">
+      Перетаскивайте строки или используйте стрелки. Номера меняются автоматически,
+      переключатели скрывают и возвращают элементы. Флажок «В гармошке» переносит целый
+      раздел в нижний раскрывающийся блок или обратно на страницу. Настройки сохраняются в этом браузере.
+    </p>
+    <div id="layoutManagerGroups" class="layout-manager-groups"></div>
+  </aside>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
