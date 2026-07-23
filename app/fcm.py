@@ -14,9 +14,14 @@ EXPERT_EDGES = (
     ("road_budget_execution", "road_repair", 0.75),
     ("road_budget_execution", "road_condition", 0.20),
     ("road_budget_execution", "road_quality", 0.20),
+    # Новая связь из graph_database.xlsx: P03_I03 → P03_I14.
+    # Срок устранения дефектов инвертирован в положительный defect_response.
+    ("road_budget_execution", "defect_response", 0.40),
     ("road_repair", "road_condition", 0.65),
     ("road_repair", "road_quality", 0.50),
     ("road_repair", "congestion", -0.20),
+    # Новая связь P03_I05 → P03_I10; ДТП инвертировано в traffic_safety.
+    ("road_repair", "traffic_safety", 0.40),
     ("road_condition", "road_quality", 0.55),
     ("road_condition", "congestion", -0.35),
     ("road_condition", "traffic_safety", 0.55),
@@ -24,6 +29,8 @@ EXPERT_EDGES = (
     ("defect_response", "road_condition", 0.30),
     ("defect_response", "road_quality", 0.30),
     ("defect_response", "traffic_safety", 0.30),
+    # Новая связь P03_I14 → P03_I08; инверсия срока меняет знак на положительный.
+    ("defect_response", "transport_regularity", 0.60),
     ("transit_budget_execution", "transport_regularity", 0.60),
     ("transit_budget_execution", "passenger_flow", 0.30),
     ("transit_budget_execution", "road_wellbeing", 0.35),
@@ -33,6 +40,9 @@ EXPERT_EDGES = (
     ("transport_regularity", "transport_accessibility", 0.65),
     ("average_speed", "congestion", -0.60),
     ("average_speed", "transport_accessibility", 0.30),
+    # Новые связи P03_I09 → P03_I08 / P03_I10.
+    ("average_speed", "transport_regularity", 0.40),
+    ("average_speed", "traffic_safety", -0.60),
     ("safety_budget_execution", "crossings", 0.55),
     ("safety_budget_execution", "traffic_safety", 0.20),
     ("crossings", "traffic_safety", 0.55),

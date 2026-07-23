@@ -736,7 +736,11 @@ class ProblemBService:
                 "validation": {"start": "2019Q1", "end": VALIDATION_END, "quarters": 16},
                 "test": {"start": "2023Q1", "end": TEST_END, "quarters": 12},
             },
-            "fcm": {"nodes": len(NODE_IDS), "edges": len(EXPERT_EDGES), "alpha": 0.35, "lambda": 1.3, "blend": "0.70 × expert + 0.30 × data"},
+            "fcm": {
+                "nodes": len(NODE_IDS), "edges": len(EXPERT_EDGES), "alpha": 0.35, "lambda": 1.3,
+                "blend": "0.70 × expert + 0.30 × data",
+                "expert_source": "graph_database.xlsx: сопоставленные связи; несопоставимые узлы сохранены из базовой карты",
+            },
             "nodes": [spec.__dict__ for spec in NODE_SPECS],
             "targets": [config.__dict__ for config in TARGETS.values()] + [
                 {"id": "integrated_mobility", "label": "Итоговый индекс безопасности и мобильности", "unit": "баллы из 100"},

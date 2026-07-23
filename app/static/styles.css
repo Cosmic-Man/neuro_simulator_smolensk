@@ -753,6 +753,7 @@ body.layout-manager-open { overflow: hidden; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .source-grid, .map-layout, .scenario-layout, .problem-focus { grid-template-columns: 1fr; }
   .scenario-controls, .scenario-results { position: static; max-height: none; overflow: visible; padding-right: 0; }
+  #scenarios .scenario-results { display: block; }
   .model-grid { grid-template-columns: 1fr; }
   .index-grid { grid-template-columns: repeat(2, 1fr); }
   .business-kpi-grid { grid-template-columns: repeat(2, 1fr); }
