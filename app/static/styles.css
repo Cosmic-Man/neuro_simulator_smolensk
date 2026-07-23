@@ -38,6 +38,7 @@ input:not([type="range"]):not([type="file"]):not([type="checkbox"]) {
 }
 input:not([type="range"]):not([type="file"]):not([type="checkbox"]):focus { border-color: var(--teal-bright); box-shadow: 0 0 0 3px rgba(32,167,155,.1); }
 .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+main.shell { width: min(1780px, calc(100% - 48px)); }
 .ambient { position: fixed; border-radius: 999px; filter: blur(4px); pointer-events: none; opacity: .6; z-index: -1; }
 .ambient-one { width: 420px; height: 420px; top: -170px; right: -100px; background: radial-gradient(circle, rgba(32, 167, 155, .28), transparent 68%); }
 .ambient-two { width: 520px; height: 520px; left: -220px; top: 42%; background: radial-gradient(circle, rgba(226, 105, 79, .15), transparent 70%); }
@@ -80,21 +81,28 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios .scenario-results > *:not(.business-summary),
 #scenarios .business-summary-heading,
 #scenarios #businessKpis .business-kpi:not(:last-child) { display: none; }
-#scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 330px; align-items: stretch; }
-#scenarios .scenario-results { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-content: stretch; max-height: none; overflow: visible; padding-right: 0; background: transparent; }
+#scenarios { padding-top: 76px; padding-bottom: 20px; }
+#scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 496px; gap: 24px; align-items: start; }
+#scenarios .scenario-results { display: grid; grid-template-rows: 270px 353px; gap: 72px; align-content: start; max-height: none; overflow: visible; padding-right: 0; background: transparent; }
 #scenarios .scenario-results > .business-summary,
 #scenarios .scenario-results > .recommendations-panel { height: 100%; box-sizing: border-box; margin: 0; }
-#scenarios .scenario-controls { position: static; }
+#scenarios .scenario-controls { position: static; min-height: 717px; padding: 48px 36px 34px; border-radius: 34px; }
 #scenarios .slider-list { max-height: none; overflow: visible; }
-#scenarios .index-actions { display: flex; gap: 8px; margin: 8px 0; }
+#scenarios .index-actions { display: flex; gap: 10px; margin: 0; padding-bottom: 10px; }
+#scenarios .index-actions .mini-button { min-height: 42px; padding: 0 14px; border-color: rgba(17,42,43,.14); font-size: 16px; }
 #scenarios .horizon-control { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 11px; }
 #scenarios .horizon-control select { width: auto; min-width: 118px; padding: 7px 9px; }
-#scenarios .slider-item { padding: 6px 0; }
-#scenarios .slider-meta { margin-bottom: 3px; }
+#scenarios .slider-item { min-height: 87px; padding: 12px 4px 16px; }
+#scenarios .slider-meta { margin-bottom: 9px; font-size: 17px; }
+#scenarios .slider-value { font-size: 17px; }
+#scenarios input[type="range"] { width: 92%; height: 22px; margin-left: 0; }
+#scenarios input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; }
+#scenarios input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border: 0; border-radius: 50%; background: var(--teal); }
 #scenarios .business-summary { margin: 0; }
 #scenarios #businessKpis { grid-template-columns: 1fr; }
-#scenarios .business-kpi { min-height: 180px; }
-#scenarios .business-kpi strong { font-size: 56px; }
+#scenarios .business-kpi { min-height: 270px; height: 270px; padding: 34px 32px; border-radius: 34px; }
+#scenarios .business-kpi > span:first-child { min-height: 0; font-size: 24px; }
+#scenarios .business-kpi strong { margin-top: 46px; font-size: 84px; line-height: .95; }
 #scenarios .business-kpi.quality-critical { --quality-color: #c0392b; }
 #scenarios .business-kpi.quality-poor { --quality-color: #e67e22; }
 #scenarios .business-kpi.quality-satisfactory { --quality-color: #d4ac0d; }
@@ -103,14 +111,15 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios .business-kpi.quality-superb { --quality-color: #218c45; }
 #scenarios .business-kpi[class*="quality-"] { border-top-color: var(--quality-color); }
 #scenarios .business-kpi[class*="quality-"] strong { color: var(--quality-color); }
-#scenarios .scenario-results > .recommendations-panel { display: block; margin-top: 10px; }
-#scenarios .scenario-results > .recommendations-panel { display: block !important; margin-top: 10px; }
+#scenarios .scenario-results > .recommendations-panel { display: block !important; height: 353px; margin-top: 0; padding: 24px 22px; border-radius: 34px; }
 #scenarios #recommendationStatus { display: block !important; }
 #scenarios #recommendationMethodology { display: none !important; }
 #scenarios .recommendations-panel .panel-toolbar { margin-bottom: 10px; }
-#scenarios .recommendations-panel { padding: 14px; }
-#scenarios .recommendations-panel h3 { font-size: 18px; }
-#scenarios .recommendations-panel .recommendation-status { margin: 9px 0; padding: 9px 10px; font-size: 12px; }
+#scenarios .recommendations-panel .panel-kicker { font-size: 30px; line-height: 1.12; }
+#scenarios .recommendations-panel h3 { margin-top: 14px; font-size: 27px; }
+#scenarios .recommendations-panel .recommendation-status { min-height: 146px; margin: 14px 0 0; padding: 18px 16px; border-radius: 24px; background: #f5efe4; font-size: 18px; line-height: 1.45; }
+#scenarios .recommendations-panel .recommendation-status strong { font-size: 23px; }
+#scenarios .recommendations-panel .recommendation-status span { font-size: 17px; }
 #scenarios .recommendations-panel .recommendation-list { gap: 5px; }
 #scenarios .recommendations-panel .recommendation-list li { padding: 7px 8px; gap: 7px; border-radius: 9px; }
 #scenarios .recommendations-panel .recommendation-list strong { font-size: 12px; }
@@ -490,6 +499,11 @@ input[type="range"] { width: 92%; accent-color: var(--teal); }
   .notebook-wide { grid-column: auto; }
   #fcmGraph { min-height: 580px; }
   .fcm-scenario-bridge { grid-template-columns: 1fr; }
+  main.shell { width: min(100% - 40px, 1180px); }
+  #scenarios .scenario-layout { grid-template-columns: 1fr; }
+  #scenarios .scenario-controls { min-height: 0; }
+  #scenarios .scenario-results { grid-template-rows: auto; gap: 16px; }
+  #scenarios .business-kpi, #scenarios .scenario-results > .recommendations-panel { height: auto; min-height: 0; }
 }
 
 @media (max-width: 620px) {
