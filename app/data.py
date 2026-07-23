@@ -14,7 +14,42 @@ from .hierarchical_index import HierarchicalFuzzyIndex
 
 EXPECTED_PERIODS = [f"{year}Q{quarter}" for year in range(2006, 2026) for quarter in range(1, 5)]
 
-FEATURE_NAMES = [feature for index_spec in FUZZY_INDEX_SPECS for feature in index_spec.features]
+FEATURE_NAMES = [
+    "бюджет_дворы_pct",
+    "дворы_благоустроено_ед",
+    "удовлетворенность_средой_дворы_pct",
+    "бюджет_трансп_A_pct",
+    "дороги_отремонт_км_A",
+    "дороги_норматив_pct_A",
+    "пассажиропоток_тыс_A",
+    "рейсы_расписание_pct_A",
+    "скорость_магистрали_A_кмч",
+    "дтп_10тыс_A",
+    "срок_устранения_деф_сут_A",
+    "переходы_регулируем_ед_A",
+    "бюджет_соцподдержка_pct",
+    "мероприятия_завершено_ед",
+    "получатели_адрподдержки_чел",
+    "бюджет_обществ_территории_pct",
+    "территории_благоустроено_ед",
+    "удовлетворенность_средой_терр_pct",
+    "бюджет_трансп_B_pct",
+    "дороги_отремонт_км_B",
+    "дороги_норматив_pct_B",
+    "пассажиропоток_тыс_B",
+    "рейсы_расписание_pct_B",
+    "скорость_магистрали_B_кмч",
+    "дтп_10тыс_B",
+    "срок_устранения_деф_сут_B",
+    "переходы_регулируем_ед_B",
+    "бюджет_дороги_C_pct",
+    "дороги_отремонт_км_C",
+    "дороги_норматив_pct_C",
+    "срок_устранения_деф_сут_C",
+]
+FUZZY_FEATURE_NAMES = [feature for spec in FUZZY_INDEX_SPECS for feature in spec.features]
+if set(FEATURE_NAMES) != set(FUZZY_FEATURE_NAMES):
+    raise RuntimeError("Состав признаков Pipeline и исходной таблицы не совпадает")
 NEGATIVE_FEATURES = {
     "дтп_10тыс_A",
     "срок_устранения_деф_сут_A",
@@ -132,8 +167,10 @@ class TrainMinMaxScaler:
 
 @dataclass
 class DataBundle:
+    source_features: pd.DataFrame
     raw: pd.DataFrame
     features: pd.DataFrame
+    pipeline_features: pd.DataFrame
     quality_features: pd.DataFrame
     fuzzy_indices: pd.DataFrame
     factors: pd.DataFrame
@@ -142,6 +179,7 @@ class DataBundle:
     hierarchical_model: HierarchicalFuzzyIndex
     hierarchical_contributions: pd.DataFrame
     feature_metadata: list[dict[str, str]]
+    outlier_periods: list[str]
     source_path: Path
 
 
@@ -149,12 +187,19 @@ def _read_shared_dataset(path: Path) -> tuple[pd.DataFrame, list[dict[str, str]]
     if not path.exists():
         raise FileNotFoundError(f"Не найден файл данных: {path}")
     loaded = pd.read_excel(path, sheet_name="Лист1", header=[0, 1], engine="openpyxl")
-    if loaded.shape != (80, 37):
-        raise ValueError(f"Ожидалась таблица 80×37, получено {loaded.shape[0]}×{loaded.shape[1]}")
+    expected_columns = len(FEATURE_NAMES) + 5
+    if loaded.shape[0] < 80 or loaded.shape[1] != expected_columns:
+        raise ValueError(f"Ожидалась таблица минимум 80×{expected_columns}, получено {loaded.shape[0]}×{loaded.shape[1]}")
 
     periods = loaded.iloc[:, 0].astype(str).tolist()
-    if periods != EXPECTED_PERIODS:
-        raise ValueError("Датасет должен содержать кварталы 2006Q1–2025Q4 без пропусков")
+    if periods[:80] != EXPECTED_PERIODS:
+        raise ValueError("Первые 80 строк должны содержать кварталы 2006Q1–2025Q4 без пропусков")
+    expected_period = "2026Q1"
+    for period in periods[80:]:
+        if period != expected_period:
+            raise ValueError(f"После 2025Q4 ожидался последовательный квартал {expected_period}, получен {period}")
+        year, quarter = int(period[:4]), int(period[-1])
+        expected_period = f"{year + 1}Q1" if quarter == 4 else f"{year}Q{quarter + 1}"
     meta_names = [str(value).strip() for value in loaded.columns.get_level_values(1)[:5]]
     if meta_names != ["period", "period_start", "year", "quarter", "period_index"]:
         raise ValueError(f"Неожиданные служебные столбцы: {meta_names}")
@@ -180,7 +225,20 @@ def _mean(frame: pd.DataFrame, columns: list[str]) -> pd.Series:
 
 
 def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
-    features, metadata = _read_shared_dataset(path)
+    source_features, metadata = _read_shared_dataset(path)
+
+    pipeline_features = source_features.copy()
+    for feature in LOG_FEATURES:
+        pipeline_features[feature] = np.log1p(pipeline_features[feature].clip(lower=0.0))
+
+    speed = pipeline_features["скорость_магистрали_B_кмч"]
+    q1, q3 = speed.quantile([0.25, 0.75])
+    iqr = float(q3 - q1)
+    lower, upper = float(q1 - 1.5 * iqr), float(q3 + 1.5 * iqr)
+    outlier_mask = (speed < lower) | (speed > upper)
+    outlier_periods = pipeline_features.index[outlier_mask].astype(str).to_list()
+    pipeline_features = pipeline_features.loc[~outlier_mask].copy()
+    features = source_features.loc[pipeline_features.index].copy()
     train = features.loc[TRAIN_START:TRAIN_END]
 
     feature_scalers: dict[str, TrainMinMaxScaler] = {}
@@ -196,7 +254,7 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
         feature_scalers[feature] = scaler
         quality[feature] = scaler.transform(features[feature]) * 100.0
 
-    fuzzy = calculate_fuzzy_indices(quality)
+    fuzzy = calculate_fuzzy_indices(pipeline_features)
     hierarchical_model = HierarchicalFuzzyIndex().fit(fuzzy.loc[TRAIN_START:TRAIN_END])
     hierarchical_index = hierarchical_model.transform(fuzzy)
     hierarchical_contributions = hierarchical_model.contributions(fuzzy)
@@ -210,7 +268,8 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
     raw["defect_days"] = _mean(features, ["срок_устранения_деф_сут_A", "срок_устранения_деф_сут_B", "срок_устранения_деф_сут_C"])
     raw["passenger_flow"] = _mean(features, ["пассажиропоток_тыс_A", "пассажиропоток_тыс_B"])
     raw["crossings"] = _mean(features, ["переходы_регулируем_ед_A", "переходы_регулируем_ед_B"])
-    raw["hierarchical_fuzzy_index"] = hierarchical_index * 100.0
+    raw["pipeline_target"] = hierarchical_index
+    raw["hierarchical_fuzzy_index"] = hierarchical_index
     for column in fuzzy:
         raw[column] = fuzzy[column]
 
@@ -257,12 +316,14 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
     )
     if not np.isfinite(factors.to_numpy()).all() or factors.min().min() < 0.0 or factors.max().max() > 1.0:
         raise ValueError("Факторы FCM должны быть конечными и находиться в диапазоне [0, 1]")
-    if raw.index[0] != TRAIN_START or raw.index[-1] != TEST_END:
-        raise ValueError("Диапазон данных не совпадает с 2006Q1–2025Q4")
+    if raw.index[0] != TRAIN_START or TEST_END not in raw.index:
+        raise ValueError("Датасет должен включать базовый диапазон 2006Q1–2025Q4")
 
     return DataBundle(
+        source_features=source_features,
         raw=raw,
         features=features,
+        pipeline_features=pipeline_features,
         quality_features=quality,
         fuzzy_indices=fuzzy,
         factors=factors,
@@ -271,5 +332,6 @@ def load_problem_b_data(path: Path = DATA_PATH) -> DataBundle:
         hierarchical_model=hierarchical_model,
         hierarchical_contributions=hierarchical_contributions,
         feature_metadata=metadata,
+        outlier_periods=outlier_periods,
         source_path=path,
     )

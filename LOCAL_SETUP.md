@@ -14,12 +14,14 @@
 ## Запуск
 
 ```powershell
-Set-Location "D:\Codex_code\Summer School\neuro_simulator_smolensk"
+Set-Location "C:\Summer School\neuro_simulator_smolensk"
 .\setup_local.ps1
 .\run_local.ps1
 ```
 
 Открыть `http://127.0.0.1:8000`. Документация API: `http://127.0.0.1:8000/docs`.
+
+Авторизация, база данных и Docker не требуются. Постоянные квартальные данные находятся в XLSX-файлах `datasets_ready`.
 
 ## Тесты
 

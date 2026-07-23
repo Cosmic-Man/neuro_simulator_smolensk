@@ -3,13 +3,17 @@ const state = {
   history: null,
   evaluation: null,
   indices: null,
+  analysis: null,
+  datasets: null,
+  datasetDetail: null,
+  modelStatus: null,
   scenarios: [],
   baseImpulses: {},
+  baseIndexValues: {},
   graph: null,
   cy: null,
-  user: null,
-  csrfToken: null,
   budgetAnalysis: null,
+  improvementRecommendations: null,
   eventsBound: false,
 };
 
@@ -27,41 +31,92 @@ const baseLayout = {
   legend: { orientation: "h", y: 1.12, x: 0 },
 };
 
-const sectionGuide = [
+const customerGuide = [
   {
-    id: "scenarios", index: "01", title: "Лаборатория FCM-сценариев", collapsible: true,
-    explanation: "Позволяет сравнить управленческие варианты: изменить воздействия, увидеть ожидаемый результат в процентах, сохранить сценарий и показать его выбранным наблюдателям.",
+    id: "scenarios", index: "01", title: "Предсказание индекса",
+    explanation: "Выберите проблемную цель, получите пять мер, задайте воздействия и сравните ожидаемый эффект с инерционным вариантом.",
   },
   {
-    id: "sensitivity", index: "02", title: "Чувствительность", collapsible: true,
-    explanation: "Ранжирует направления по силе влияния на выбранную цель. Чем заметнее изменение, тем больший модельный эффект ожидается от работы с этим фактором.",
-  },
-  {
-    id: "overview", index: "03", title: "Текущее состояние", collapsible: true,
+    id: "overview", index: "02", title: "Текущее состояние",
     explanation: "Краткая управленческая сводка последнего доступного периода: где транспортная система находится сейчас и какие значения используются как точка отсчёта.",
   },
   {
-    id: "history", index: "04", title: "История и сезонность", collapsible: true,
+    id: "datasets", index: "04", title: "Данные для расчёта",
+    explanation: "Показывает активный XLSX. Пользователь может выбрать файл, проверить квартал, исправить 31 показатель или добавить новую строку.",
+  },
+];
+
+const technicalGuide = [
+  {
+    id: "sensitivity", index: "A1", title: "Чувствительность",
+    explanation: "Ранжирует направления по силе влияния на выбранную цель.",
+  },
+  {
+    id: "history", index: "A2", title: "Динамика target и показателей",
     explanation: "Показывает устойчивость изменений во времени, сезонные колебания и периоды улучшения или ухудшения — чтобы не принять единичный всплеск за долгосрочный тренд.",
   },
   {
-    id: "indices", index: "05", title: "Сводные индексы", collapsible: true,
+    id: "indices", index: "A3", title: "Сводные индексы",
     explanation: "Собирает множество разрозненных показателей в понятные оценки от 0 до 100 и показывает, из каких направлений складывается общая ситуация.",
   },
   {
-    id: "models", index: "06", title: "Проверка моделей", collapsible: true,
+    id: "models", index: "A4", title: "Проверка моделей",
     explanation: "Показывает, насколько прогнозы совпадали с уже известными данными. Заказчик видит, на какой метод можно опираться и где сохраняется неопределённость.",
   },
   {
-    id: "map", index: "07", title: "Карта связей FCM", collapsible: true,
-    explanation: "Объясняет, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. Карта помогает проследить логику уже полученного сценарного результата.",
+    id: "analysis", index: "A5", title: "Диаграмма размаха и функции принадлежности",
+    explanation: "Показывает исходную проверку данных: типичные диапазоны, выбросы, нечёткие границы оценок и веса итогового индекса. Это делает расчёт из Pipeline.ipynb наглядным для заказчика.",
   },
 ];
+
+const mapGuide = {
+  id: "map", index: "03", title: "Граф связей FCM",
+};
+
+const fcmAdvisorScenarios = [
+  {
+    id: "inertial",
+    label: "Инерционный",
+    description: "Сохранение текущих темпов ремонта, транспорта и цифровизации.",
+    targets: ["traffic_safety", "transport_regularity", "transport_accessibility"],
+    factors: ["road_condition", "defect_response", "crossings", "congestion", "transit_budget_execution", "average_speed"],
+  },
+  {
+    id: "road_decline",
+    label: "Ухудшение дорожной инфраструктуры",
+    description: "Замедление ремонта и снижение доли нормативных дорог.",
+    targets: ["traffic_safety", "transport_accessibility"],
+    factors: ["road_condition", "defect_response", "road_repair", "road_budget_execution", "congestion"],
+  },
+  {
+    id: "public_transport",
+    label: "Приоритет общественного транспорта",
+    description: "Рост регулярности, связанности маршрутов и качества остановок.",
+    targets: ["transport_regularity", "transport_accessibility"],
+    factors: ["congestion", "transit_budget_execution", "average_speed", "road_wellbeing"],
+  },
+  {
+    id: "digital_mobility",
+    label: "Цифровая мобильность",
+    description: "Управление потоками, маршрутами и светофорными циклами.",
+    targets: ["transport_regularity", "transport_accessibility"],
+    factors: ["congestion", "road_condition", "transport_environment", "average_speed"],
+  },
+  {
+    id: "safety",
+    label: "Безопасность",
+    description: "Пешеходная инфраструктура и устранение опасных участков.",
+    targets: ["traffic_safety"],
+    factors: ["crossings", "defect_response", "road_condition", "road_quality", "safety_budget_execution"],
+  },
+];
+
+const sectionGuide = [...customerGuide, ...technicalGuide, mapGuide];
 
 function resizeSectionVisuals(section) {
   const resize = () => {
     section.querySelectorAll(".js-plotly-plot").forEach(plot => window.Plotly?.Plots?.resize(plot));
-    if (section.id === "map" && state.cy) {
+    if ((section.id === "map" || section.querySelector("#map")) && state.cy) {
       state.cy.resize();
       state.cy.fit(undefined, 36);
     }
@@ -80,14 +135,18 @@ function setAccordionExpanded(section, expanded) {
   toggle.setAttribute("aria-expanded", String(expanded));
   content.hidden = !expanded;
   section.classList.toggle("accordion-expanded", expanded);
-  toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть раздел" : "Развернуть раздел";
+  toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть графики" : "Развернуть графики";
   if (expanded) resizeSectionVisuals(section);
 }
 
 function initializePageStructure() {
   const main = document.querySelector("main.shell");
-  const admin = document.getElementById("adminPanel");
-  sectionGuide.forEach(item => main.insertBefore(document.getElementById(item.id), admin));
+  const appendix = document.getElementById("technicalAppendix");
+  const appendixContent = document.getElementById("technicalAppendixContent");
+  customerGuide.forEach(item => main.insertBefore(document.getElementById(item.id), appendix));
+  technicalGuide.forEach(item => appendixContent.appendChild(document.getElementById(item.id)));
+  // Граф FCM — отдельный раздел перед техническими графиками.
+  main.insertBefore(document.getElementById("map"), appendix);
 
   sectionGuide.forEach(item => {
     const section = document.getElementById(item.id);
@@ -95,37 +154,78 @@ function initializePageStructure() {
     heading.querySelector(".section-index").textContent = item.index;
     heading.querySelector("h2").textContent = item.title;
 
+    if (item.id === "map" || item.id === "datasets") return;
+
     const help = document.createElement("span");
     help.className = "section-help";
     help.innerHTML = `<button class="section-help-trigger" type="button" aria-describedby="help-${item.id}">Что показывает?</button>
       <span id="help-${item.id}" class="section-help-tooltip" role="tooltip">${escapeHtml(item.explanation)}</span>`;
     heading.querySelector(":scope > div").appendChild(help);
 
-    if (!item.collapsible) return;
-    const content = document.createElement("div");
-    content.id = `${item.id}Content`;
-    content.className = "accordion-content";
-    while (heading.nextSibling) content.appendChild(heading.nextSibling);
+  });
 
-    const toggle = document.createElement("button");
-    toggle.className = "accordion-toggle";
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-controls", content.id);
-    toggle.innerHTML = `<span><strong class="accordion-action">Развернуть раздел</strong><small>${escapeHtml(item.title)} · нажмите здесь, чтобы показать содержимое</small></span><b aria-hidden="true">⌄</b>`;
-    toggle.addEventListener("click", () => setAccordionExpanded(section, toggle.getAttribute("aria-expanded") !== "true"));
-    section.append(toggle, content);
-    content.hidden = true;
+  // Раздел 02 и весь последующий контент доступны внутри одной гармошки.
+  const secondary = document.createElement("section");
+  secondary.id = "secondaryAccordion";
+  secondary.className = "section-block secondary-accordion";
+  secondary.innerHTML = `
+    <div class="section-heading"><div><span class="section-index">02</span><h2>FCM-советчик</h2></div><p>Состояние, данные и аналитика</p></div>
+    <div class="panel fcm-advisor-panel">
+      <div class="fcm-advisor-grid">
+        <div>
+          <div class="fcm-advisor-heading">
+            <div><span class="panel-kicker">Сценарии</span><h3>Выберите до трёх</h3></div>
+            <span id="fcmAdvisorCount" class="fcm-advisor-count">1 из 3</span>
+          </div>
+          <div id="fcmAdvisorScenarios" class="fcm-advisor-scenarios">
+            ${fcmAdvisorScenarios.map((scenario, index) => `
+              <label class="fcm-advisor-option">
+                <input type="checkbox" value="${scenario.id}"${index === 0 ? " checked" : ""}>
+                <span><strong>${scenario.label}</strong><small>${scenario.description}</small></span>
+              </label>`).join("")}
+          </div>
+        </div>
+        <div class="fcm-advisor-output">
+          <div class="fcm-advisor-heading">
+            <div><span class="panel-kicker">Совет FCM</span><h3>Что изменить</h3></div>
+            <button id="runFcmAdvisor" class="mini-button" type="button">Обновить</button>
+          </div>
+          <div id="fcmAdvisorResult" class="fcm-advisor-result" aria-live="polite">
+            <p class="fcm-advisor-empty">Загружаем веса модели…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="secondaryAccordionContent">
+      <span><strong class="accordion-action">Развернуть разделы</strong><small>Подсказки FCM, состояние, данные и аналитика</small></span><b aria-hidden="true">⌄</b>
+    </button>
+    <div id="secondaryAccordionContent" class="accordion-content technical-stack" hidden></div>`;
+  const secondaryContent = secondary.querySelector("#secondaryAccordionContent");
+  ["overview", "history", "indices", "models", "sensitivity", "analysis", "technicalAppendix"]
+    .map(id => document.getElementById(id)).filter(Boolean).forEach(section => secondaryContent.appendChild(section));
+  const scenariosSection = document.getElementById("scenarios");
+  const mapSection = document.getElementById("map");
+  main.insertBefore(secondary, mapSection || (scenariosSection ? scenariosSection.nextSibling : main.firstChild));
+  const datasetsSection = document.getElementById("datasets");
+  if (datasetsSection && mapSection) main.insertBefore(datasetsSection, mapSection.nextSibling);
+
+  appendix.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
+    const toggle = event.currentTarget;
+    setAccordionExpanded(appendix, toggle.getAttribute("aria-expanded") !== "true");
   });
 
   document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener("click", () => {
     const target = document.getElementById(link.getAttribute("href").slice(1));
-    if (target) setAccordionExpanded(target, true);
+    if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
   }));
   if (window.location.hash) {
     const target = document.getElementById(window.location.hash.slice(1));
-    if (target) setAccordionExpanded(target, true);
+    if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
   }
+  secondary.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
+    const toggle = event.currentTarget;
+    setAccordionExpanded(secondary, toggle.getAttribute("aria-expanded") !== "true");
+  });
 }
 
 class ApiError extends Error {
@@ -135,8 +235,7 @@ class ApiError extends Error {
 async function api(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
-  if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  if (state.csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method)) headers["X-CSRF-Token"] = state.csrfToken;
+  if (options.body && !(options.body instanceof FormData) && !(options.body instanceof Blob)) headers["Content-Type"] = "application/json";
   const response = await fetch(path, { ...options, method, headers, credentials: "same-origin" });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -191,7 +290,7 @@ function renderOverview() {
   const groups = [...new Set(state.metadata.features.map(feature => feature.group))];
   document.getElementById("sheetTags").innerHTML = groups.map(group => `<span class="tag">${group}</span>`).join("");
   document.getElementById("proxyList").innerHTML = state.metadata.proxies.map(proxy =>
-    `<div class="proxy-item"><strong>${proxy.id}</strong><span>${proxy.description}</span></div>`).join("");
+    `<div class="proxy-item"><strong>${escapeHtml(proxy.label || ({ digital_mobility: "Цифровая мобильность" }[proxy.id]) || proxy.id)}</strong><span>${escapeHtml(proxy.description)}</span></div>`).join("");
 }
 
 function historySeries(id) { return state.history.series.find(item => item.id === id); }
@@ -247,7 +346,7 @@ function renderIndices() {
     <article class="panel index-card"><strong>${formatNumber(item.value)}</strong><small>${item.label}</small></article>`).join("");
   const latestHierarchical = state.indices.hierarchical[state.indices.hierarchical.length - 1];
   document.getElementById("hierarchicalIndexCard").innerHTML = `
-    <article class="panel expert-index-card"><div><span class="panel-kicker">8 нечётких индексов</span><small>Иерархический индекс Гульдар</small></div><strong>${formatNumber(latestHierarchical)}</strong></article>`;
+    <article class="panel expert-index-card"><div><span class="panel-kicker">8 нечётких индексов</span><small>Итоговая линейная свёртка Pipeline</small></div><strong>${formatNumber(latestHierarchical)}</strong></article>`;
   document.getElementById("fuzzySourceList").innerHTML = state.indices.fuzzy.map((item, index) => `
     <section class="fuzzy-source-item">
       <div class="fuzzy-source-heading"><span>${index + 1}</span><strong>${item.label}</strong></div>
@@ -273,12 +372,294 @@ function renderFuzzyIndexPlot() {
   const item = state.indices.fuzzy.find(index => index.id === id);
   Plotly.react("fuzzyIndexPlot", [
     { x: state.indices.periods, y: item.values, name: item.label, type: "scatter", mode: "lines", line: { color: colors.teal, width: 2.5 } },
-    { x: state.indices.periods, y: state.indices.hierarchical, name: "Гульдар · 8 нечётких индексов", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "solid" } },
+    { x: state.indices.periods, y: state.indices.hierarchical, name: "Pipeline · итоговый индекс", type: "scatter", mode: "lines", line: { color: colors.coral, width: 2, dash: "solid" } },
   ], { ...baseLayout, margin: { l: 50, r: 16, t: 24, b: 46 }, yaxis: { ...baseLayout.yaxis, range: [0, 100], title: "баллы" } }, plotConfig);
+}
+
+function membershipValue(x, term) {
+  const p = term.params;
+  if (term.type === "trapmf") {
+    const [a, b, c, d] = p;
+    if (x <= a || x >= d) return 0;
+    if (x >= b && x <= c) return 1;
+    return x < b ? (b === a ? 1 : (x - a) / (b - a)) : (d === c ? 1 : (d - x) / (d - c));
+  }
+  const [a, b, c] = p;
+  if (x <= a || x >= c) return 0;
+  if (x === b) return 1;
+  return x < b ? (b === a ? 1 : (x - a) / (b - a)) : (c === b ? 1 : (c - x) / (c - b));
+}
+
+function membershipTraces(variable) {
+  const [minimum, maximum] = variable.universe;
+  const x = Array.from({ length: 201 }, (_, index) => minimum + (maximum - minimum) * index / 200);
+  return variable.terms.map((term, index) => ({
+    x, y: x.map(value => membershipValue(value, term)), name: term.name,
+    type: "scatter", mode: "lines", line: { width: 2.5, color: [colors.teal, colors.coral, colors.gold, colors.blue, colors.bright, colors.ink][index % 6] },
+    hovertemplate: "%{x:.2f}<br>принадлежность %{y:.2f}<extra>" + escapeHtml(term.name) + "</extra>",
+  }));
+}
+
+function renderBoxplots() {
+  const group = document.getElementById("boxplotGroup").value;
+  const items = state.analysis.boxplots.filter(item => item.group === group);
+  const traces = items.map((item, index) => ({
+    y: item.values, text: state.analysis.periods, name: item.label,
+    type: "box", boxpoints: "outliers", jitter: .2, pointpos: 0,
+    marker: { color: [colors.teal, colors.coral, colors.gold, colors.blue, colors.bright][index % 5], size: 6 },
+    line: { width: 1.7 }, hovertemplate: "%{text}<br><b>%{y:.2f}</b><extra>" + escapeHtml(item.label) + "</extra>",
+  }));
+  Plotly.react("boxplotPlot", traces, {
+    ...baseLayout, margin: { l: 58, r: 18, t: 20, b: 105 }, showlegend: false,
+    xaxis: { ...baseLayout.xaxis, tickangle: -25, automargin: true },
+    yaxis: { ...baseLayout.yaxis, title: "исходные значения" },
+  }, plotConfig);
+  const outliers = items.flatMap(item => item.outliers.map(value => ({ ...value, label: item.label })));
+  document.getElementById("outlierSummary").innerHTML = outliers.length
+    ? `<strong>Нетипичные наблюдения: ${outliers.length}.</strong> ${outliers.slice(0, 5).map(item => `${escapeHtml(item.label)} — ${escapeHtml(item.period)} (${formatNumber(item.value, 2)})`).join("; ")}${outliers.length > 5 ? "…" : ""}`
+    : "<strong>Выбросов по правилу 1,5 IQR не найдено.</strong> Значения этой группы находятся внутри статистически ожидаемого диапазона.";
+}
+
+function renderMembershipVariableOptions() {
+  const selected = state.analysis.memberships.find(item => item.id === document.getElementById("membershipIndex").value);
+  fillSelect(document.getElementById("membershipVariable"), selected.variables);
+  renderMembershipPlot();
+}
+
+function renderMembershipPlot() {
+  const selected = state.analysis.memberships.find(item => item.id === document.getElementById("membershipIndex").value);
+  const variable = selected.variables.find(item => item.id === document.getElementById("membershipVariable").value);
+  const quantileColors = [colors.muted, colors.gold, colors.muted];
+  const shapes = (variable.quantiles || []).map((value, index) => ({
+    type: "line", x0: value, x1: value, y0: 0, y1: 1,
+    line: { color: quantileColors[index], width: index === 1 ? 2 : 1, dash: "dash" },
+  }));
+  const annotations = (variable.quantiles || []).map((value, index) => ({
+    x: value, y: 1.02, text: ["Q1", "Медиана", "Q3"][index], showarrow: false,
+    font: { size: 10, color: quantileColors[index] }, yanchor: "bottom",
+  }));
+  Plotly.react("membershipPlot", membershipTraces(variable), {
+    ...baseLayout, margin: { l: 55, r: 18, t: 24, b: 52 },
+    xaxis: { ...baseLayout.xaxis, title: variable.label },
+    yaxis: { ...baseLayout.yaxis, title: "степень принадлежности", range: [0, 1.05] },
+    shapes, annotations,
+  }, plotConfig);
+}
+
+function renderAnalysis() {
+  const analysis = state.analysis;
+  document.getElementById("pipelineStats").innerHTML = [
+    ["Строк в источнике", analysis.source_rows],
+    ["После очистки", analysis.processed_rows],
+    ["Исключено выбросов", analysis.excluded_outliers.length],
+    ["Нечётких индексов", analysis.memberships.length],
+    ["Правил из JSON", analysis.applied_rules],
+  ].map(([label, value]) => `<article class="analysis-stat-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+
+  const groups = [...new Set(analysis.boxplots.map(item => item.group))].map(group => ({ id: group, label: group }));
+  fillSelect(document.getElementById("boxplotGroup"), groups);
+  fillSelect(document.getElementById("membershipIndex"), analysis.memberships);
+  renderBoxplots();
+  renderMembershipVariableOptions();
+
+  const reference = analysis.reference_memberships;
+  document.getElementById("membershipReferenceNote").textContent = reference.note;
+  Plotly.react("membershipReferencePlot", membershipTraces({ universe: reference.universe, terms: reference.terms }), {
+    ...baseLayout, height: 260, margin: { l: 46, r: 12, t: 24, b: 40 },
+    xaxis: { ...baseLayout.xaxis, title: "нормированная шкала" },
+    yaxis: { ...baseLayout.yaxis, range: [0, 1.05], title: "принадлежность" },
+  }, plotConfig);
+
+  Plotly.react("pipelineWeightsPlot", [{
+    x: analysis.linear_weights.map(item => item.weight * 100),
+    y: analysis.linear_weights.map(item => item.label),
+    type: "bar", orientation: "h", marker: { color: colors.teal },
+    text: analysis.linear_weights.map(item => `${formatNumber(item.weight * 100, 1)}%`), textposition: "outside",
+    hovertemplate: "%{y}<br><b>%{x:.1f}%</b><extra></extra>",
+  }], {
+    ...baseLayout, height: 300, showlegend: false, margin: { l: 175, r: 48, t: 14, b: 38 },
+    xaxis: { ...baseLayout.xaxis, title: "вес в итоговом индексе, %" },
+    yaxis: { ...baseLayout.yaxis, autorange: "reversed", automargin: true },
+  }, plotConfig);
+}
+
+function renderDatasetCatalog() {
+  const select = document.getElementById("datasetSelect");
+  const defaultDataset = "smolensk_dataset_shared.xlsx";
+  const remembered = window.localStorage.getItem("smolensk.activeDataset");
+  const selected = state.datasets.datasets.some(item => item.name === remembered)
+    ? remembered
+    : (state.datasets.datasets.some(item => item.name === defaultDataset) ? defaultDataset : (select.value || state.datasets.active));
+  select.innerHTML = state.datasets.datasets.map(item =>
+    `<option value="${escapeHtml(item.name)}">${item.active ? "● " : ""}${escapeHtml(item.name)} · ${item.rows} строк</option>`).join("");
+  select.value = state.datasets.datasets.some(item => item.name === selected) ? selected : state.datasets.active;
+  window.localStorage.setItem("smolensk.activeDataset", select.value);
+}
+
+function datasetRowValues() {
+  const values = {};
+  document.querySelectorAll("#datasetFields input[data-feature]").forEach(input => {
+    values[input.dataset.feature] = Number(input.value);
+  });
+  return values;
+}
+
+function populateDatasetRow(period) {
+  const isNew = period === "__new__";
+  const row = isNew
+    ? state.datasetDetail.rows_data.at(-1)
+    : state.datasetDetail.rows_data.find(item => item.period === period);
+  document.querySelectorAll("#datasetFields input[data-feature]").forEach(input => {
+    input.value = row?.values[input.dataset.feature] ?? 0;
+  });
+  const next = state.datasetDetail.next_period;
+  document.getElementById("datasetEditorHint").textContent = isNew
+    ? `Будет добавлен квартал ${next}. Для удобства скопированы прошлые значения — замените их фактическими данными.`
+    : `Редактируется квартал ${period}. Сохранение проходит полную проверку Pipeline до замены XLSX.`;
+}
+
+function renderTrainingStatus() {
+  if (!state.modelStatus) return;
+  const card = document.querySelector(".retraining-card");
+  const button = document.getElementById("retrainModels");
+  if (!card || !button || !document.getElementById("modelTrainingStatus")) return;
+  card.classList.toggle("pending", state.modelStatus.pending_retrain);
+  card.classList.toggle("ready", !state.modelStatus.pending_retrain);
+  document.getElementById("modelTrainingStatus").textContent = state.modelStatus.pending_retrain
+    ? `Новые данные сохранены, но рекомендации пока используют период по ${state.modelStatus.trained_through}. Нажмите переобучение.`
+    : `Модель актуальна по ${state.modelStatus.trained_through}: ${state.modelStatus.source_rows} кварталов, ${state.modelStatus.models} рабочих ANFIS-модели.`;
+  button.textContent = state.modelStatus.pending_retrain ? "Переобучить на новых данных" : "Переобучить заново";
+}
+
+function renderDatasetDetail() {
+  const detail = state.datasetDetail;
+  const dataset = state.datasets.datasets.find(item => item.name === detail.name);
+  document.getElementById("datasetSummary").innerHTML = `<strong>${dataset?.active ? "Активный источник расчёта" : "Файл открыт только для просмотра"}</strong>
+    <span>${detail.rows} строк · ${escapeHtml(detail.first_period)}–${escapeHtml(detail.last_period)}</span>`;
+
+  const groups = [];
+  detail.columns.forEach(column => {
+    let group = groups.find(item => item.name === column.group);
+    if (!group) { group = { name: column.group, columns: [] }; groups.push(group); }
+    group.columns.push(column);
+  });
+  const readonly = "";
+  document.getElementById("datasetFields").innerHTML = groups.map(group => `<fieldset>
+    <legend>${escapeHtml(group.name)}</legend><div>${group.columns.map(column => `<label>${escapeHtml(column.label)}
+      <input type="number" step="any" min="0" data-feature="${escapeHtml(column.id)}" ${readonly}></label>`).join("")}</div></fieldset>`).join("");
+
+  const rowSelect = document.getElementById("datasetRowSelect");
+  rowSelect.innerHTML = detail.rows_data.map(row => `<option value="${escapeHtml(row.period)}">${escapeHtml(row.period)}</option>`).join("")
+    + `<option value="__new__">${escapeHtml(detail.next_period)} · новая строка</option>`;
+  rowSelect.value = detail.rows_data.at(-1).period;
+  populateDatasetRow(rowSelect.value);
+
+  const previewIds = [
+    "бюджет_дворы_pct", "дороги_норматив_pct_A", "рейсы_расписание_pct_B",
+    "скорость_магистрали_B_кмч", "дтп_10тыс_B", "дороги_норматив_pct_C",
+  ];
+  const previewColumns = previewIds.map(id => detail.columns.find(column => column.id === id)).filter(Boolean);
+  const previewHead = document.getElementById("datasetPreviewHead");
+  const previewBody = document.getElementById("datasetPreviewBody");
+  if (previewHead && previewBody) {
+    previewHead.innerHTML = `<tr><th>Квартал</th>${previewColumns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
+    previewBody.innerHTML = detail.rows_data.slice(-5).map(row => `<tr><td><strong>${escapeHtml(row.period)}</strong></td>${previewColumns.map(column => `<td>${formatNumber(row.values[column.id], 2)}</td>`).join("")}</tr>`).join("");
+  }
+}
+
+async function loadDatasetDetail(name) {
+  state.datasetDetail = await api(`/api/datasets/${encodeURIComponent(name)}`);
+  renderDatasetDetail();
+}
+
+async function uploadDataset() {
+  const input = document.getElementById("datasetFile");
+  const button = document.getElementById("uploadDataset");
+  const file = input.files[0];
+  if (!file) { showToast("Выберите XLSX-файл", true); return; }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) { showToast("Можно загрузить только XLSX-файл", true); return; }
+  if (file.size > 20 * 1024 * 1024) { showToast("XLSX-файл превышает 20 МБ", true); return; }
+  button.disabled = true; button.textContent = "Проверка и пересчёт…";
+  try {
+    await api(`/api/datasets/upload?name=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      body: file,
+    });
+    input.value = "";
+    showToast(`Файл ${file.name} загружен. Индексы и транспортная доступность пересчитаны.`);
+    await initializeApplication();
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Загрузить XLSX и пересчитать"; }
+}
+
+async function activateDataset() {
+  const button = document.getElementById("activateDataset");
+  button.disabled = true; button.textContent = "Пересчёт…";
+  try {
+    const name = document.getElementById("datasetSelect").value;
+    await api("/api/datasets/select", { method: "POST", body: JSON.stringify({ name }) });
+    showToast(`Датасет ${name} выбран. Все разделы пересчитаны.`);
+    await initializeApplication();
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Использовать для расчёта"; }
+}
+
+async function saveDatasetRow() {
+  const button = document.getElementById("saveDatasetRow");
+  const name = document.getElementById("datasetSelect").value;
+  const period = document.getElementById("datasetRowSelect").value;
+  const isNew = period === "__new__";
+  button.disabled = true; button.textContent = "Проверка Pipeline…";
+  try {
+    const path = isNew
+      ? `/api/datasets/${encodeURIComponent(name)}/rows`
+      : `/api/datasets/${encodeURIComponent(name)}/rows/${encodeURIComponent(period)}`;
+    const result = await api(path, { method: isNew ? "POST" : "PUT", body: JSON.stringify({ values: datasetRowValues() }) });
+    state.datasetDetail = result.dataset;
+    state.modelStatus = result.model_status;
+    state.datasets = await api("/api/datasets");
+    renderDatasetCatalog();
+    renderDatasetDetail();
+    renderTrainingStatus();
+    showToast(result.active === name
+      ? `${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period}. Теперь переобучите модель.`
+      : `${isNew ? "Добавлен" : "Обновлён"} квартал ${result.period} в резервном файле.`);
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = "Сохранить данные"; }
+}
+
+async function retrainModels() {
+  const button = document.getElementById("retrainModels");
+  button.disabled = true; button.textContent = "Переобучение…";
+  try {
+    state.modelStatus = await api("/api/models/retrain", { method: "POST" });
+    showToast(`Модель обновлена по ${state.modelStatus.trained_through}. Рекомендации пересчитаны.`);
+    await initializeApplication();
+  } catch (error) {
+    showToast(error.message, true);
+    renderTrainingStatus();
+  } finally {
+    button.disabled = false;
+    renderTrainingStatus();
+  }
 }
 
 function selectedEvaluation() {
   return state.evaluation.targets.find(target => target.id === document.getElementById("evaluationTarget").value);
+}
+
+function renderModelGuide() {
+  document.getElementById("modelGuide").innerHTML = state.evaluation.model_catalog.map(model => `
+    <article class="model-guide-card">
+      <span class="model-role">${escapeHtml(model.role)}</span>
+      <h4>${escapeHtml(model.label)}</h4>
+      <dl>
+        <div><dt>Как считает</dt><dd>${escapeHtml(model.how)}</dd></div>
+        <div><dt>Что использует</dt><dd>${escapeHtml(model.inputs)}</dd></div>
+        <div><dt>Зачем сравниваем</dt><dd>${escapeHtml(model.purpose)}</dd></div>
+      </dl>
+    </article>`).join("");
 }
 
 function renderEvaluation() {
@@ -293,8 +674,55 @@ function renderEvaluation() {
   Plotly.react("evaluationPlot", traces, { ...baseLayout, yaxis: { ...baseLayout.yaxis, title: target.unit } }, plotConfig);
   const metrics = target.metrics.filter(row => row.split === split);
   const bestRmse = Math.min(...metrics.map(row => row.rmse));
-  document.getElementById("metricsBody").innerHTML = metrics.map(row => `
-    <tr><td>${row.model_label}</td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`).join("");
+  const catalog = Object.fromEntries(state.evaluation.model_catalog.map(model => [model.id, model]));
+  document.getElementById("metricsBody").innerHTML = metrics.map(row => {
+    const model = catalog[row.model];
+    return `<tr><td><strong>${escapeHtml(row.model_label)}</strong><small class="model-table-role">${escapeHtml(model.role)}</small></td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`;
+  }).join("");
+}
+
+function renderNotebookPlots() {
+  const targetSeries = state.history.series.find(item => item.id === "pipeline_target");
+  Plotly.react("notebookTargetPlot", [{
+    x: state.history.periods, y: targetSeries.values, name: "target", type: "scatter", mode: "lines+markers",
+    line: { color: colors.blue, width: 2 }, marker: { size: 5 },
+    hovertemplate: "%{x}<br>target: %{y:.3f}<extra></extra>",
+  }], {
+    ...baseLayout, showlegend: true, margin: { l: 52, r: 18, t: 26, b: 58 },
+    xaxis: { ...baseLayout.xaxis, title: "Период", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "Значение target" },
+  }, plotConfig);
+
+  const target = state.evaluation.targets.find(item => item.id === "pipeline_target");
+  const validation = target.predictions.validation;
+  Plotly.react("notebookValidationPlot", [
+    { x: validation.map(row => row.period), y: validation.map(row => row.actual), name: "Факт (target, норм.)", type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 2 } },
+    { x: validation.map(row => row.period), y: validation.map(row => row.anfis), name: "Прогноз ANFIS", type: "scatter", mode: "lines+markers", line: { color: colors.teal, width: 2, dash: "dash" } },
+  ], {
+    ...baseLayout, margin: { l: 52, r: 18, t: 26, b: 54 },
+    xaxis: { ...baseLayout.xaxis, title: "Validation 2019–2022", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
+  }, plotConfig);
+
+  const test = target.predictions.test;
+  const modelStyles = {
+    seasonal_naive: { color: colors.muted, dash: "dot" },
+    ridge: { color: colors.blue, dash: "dash" },
+    anfis: { color: colors.teal, dash: "solid" },
+  };
+  const testTraces = [{
+    x: test.map(row => row.period), y: test.map(row => row.actual), name: "Target (норм.)",
+    type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 3 },
+  }];
+  Object.entries(state.evaluation.model_labels).forEach(([model, label]) => testTraces.push({
+    x: test.map(row => row.period), y: test.map(row => row[model]), name: label,
+    type: "scatter", mode: "lines+markers", line: { ...modelStyles[model], width: 2 },
+  }));
+  Plotly.react("notebookTestPlot", testTraces, {
+    ...baseLayout, margin: { l: 52, r: 18, t: 26, b: 54 },
+    xaxis: { ...baseLayout.xaxis, title: "Test 2023–2025", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
+  }, plotConfig);
 }
 
 function renderAnfisCards() {
@@ -302,13 +730,109 @@ function renderAnfisCards() {
   document.getElementById("anfisCards").innerHTML = state.metadata.anfis.map(model => `
     <article class="panel model-card"><span class="panel-kicker">ANFIS · ${model.rule_count} правил</span><h3>${labels[model.target]}</h3><ul>
       <li><span>Входы</span><strong>${model.inputs.length}</strong></li><li><span>σ</span><strong>${formatNumber(model.sigma, 2)}</strong></li>
-      <li><span>Ridge</span><strong>${formatNumber(model.ridge, 3)}</strong></li><li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 3)}</strong></li>
+      <li><span>Эпохи</span><strong>${model.epochs}</strong></li><li><span>Validation RMSE</span><strong>${formatNumber(model.validation_rmse, 4)}</strong></li>
     </ul></article>`).join("");
+}
+
+function strongestFcmInfluence(sourceId, targetIds, edges, maxDepth = 4) {
+  const targets = new Set(targetIds);
+  const adjacency = new Map();
+  edges.forEach(edge => {
+    const data = edge.data;
+    if (!adjacency.has(data.source)) adjacency.set(data.source, []);
+    adjacency.get(data.source).push(data);
+  });
+
+  const walk = (nodeId, weight, path, visited) => {
+    if (path.length > 1 && targets.has(nodeId)) return { weight, path };
+    if (path.length > maxDepth) return null;
+    let strongest = null;
+    (adjacency.get(nodeId) || []).forEach(edge => {
+      if (visited.has(edge.target)) return;
+      const result = walk(
+        edge.target,
+        weight * Number(edge.weight),
+        [...path, edge.target],
+        new Set([...visited, edge.target]),
+      );
+      if (result && (!strongest || Math.abs(result.weight) > Math.abs(strongest.weight))) strongest = result;
+    });
+    return strongest;
+  };
+
+  return walk(sourceId, 1, [sourceId], new Set([sourceId]));
+}
+
+function selectedFcmAdvisorScenarios() {
+  const selected = new Set([...document.querySelectorAll("#fcmAdvisorScenarios input:checked")].map(input => input.value));
+  return fcmAdvisorScenarios.filter(scenario => selected.has(scenario.id));
+}
+
+function syncFcmAdvisorSelection(changedInput = null) {
+  const inputs = [...document.querySelectorAll("#fcmAdvisorScenarios input")];
+  let checked = inputs.filter(input => input.checked);
+  if (checked.length > 3 && changedInput) {
+    changedInput.checked = false;
+    checked = inputs.filter(input => input.checked);
+    showToast("Можно выбрать не более трёх сценариев", true);
+  }
+  inputs.forEach(input => { input.disabled = checked.length >= 3 && !input.checked; });
+  const counter = document.getElementById("fcmAdvisorCount");
+  if (counter) counter.textContent = `${checked.length} из 3`;
+  const button = document.getElementById("runFcmAdvisor");
+  if (button) button.disabled = checked.length === 0;
+  renderFcmAdvisor();
+}
+
+function renderFcmAdvisor() {
+  const container = document.getElementById("fcmAdvisorResult");
+  if (!container) return;
+  const scenarios = selectedFcmAdvisorScenarios();
+  if (!scenarios.length) {
+    container.innerHTML = '<p class="fcm-advisor-empty">Выберите хотя бы один сценарий.</p>';
+    return;
+  }
+  if (!state.graph) {
+    container.innerHTML = '<p class="fcm-advisor-empty">Загружаем веса модели…</p>';
+    return;
+  }
+
+  const nodes = Object.fromEntries(state.graph.nodes.map(node => [node.data.id, node.data]));
+  const mode = document.getElementById("fcmMode")?.value === "expert" ? "экспертный" : "адаптированный";
+  container.innerHTML = scenarios.map(scenario => {
+    const measures = scenario.factors
+      .map(factorId => {
+        const influence = strongestFcmInfluence(factorId, scenario.targets, state.graph.edges);
+        return influence ? { factorId, ...influence } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight))
+      .slice(0, 3);
+    const items = measures.map((measure, index) => {
+      const factor = nodes[measure.factorId];
+      const target = nodes[measure.path.at(-1)];
+      const action = scenario.id === "inertial"
+        ? (measure.weight < 0 ? "Сдерживать" : "Поддерживать")
+        : (measure.weight < 0 ? "Снизить" : "Повысить");
+      const label = factor?.label || measure.factorId;
+      const formattedWeight = `${measure.weight >= 0 ? "+" : "−"}${Math.abs(measure.weight).toFixed(2).replace(".", ",")}`;
+      return `<li>
+        <span class="fcm-advice-rank">${index + 1}</span>
+        <span><strong>${action} ${escapeHtml(label.charAt(0).toLowerCase() + label.slice(1))}</strong>
+        <small>вес ${formattedWeight} · ${escapeHtml(target?.label || "цель сценария")}</small></span>
+      </li>`;
+    }).join("");
+    return `<article class="fcm-advice-card">
+      <h4>${escapeHtml(scenario.label)}</h4>
+      <ol>${items || "<li>Для этого сценария недостаточно связей.</li>"}</ol>
+    </article>`;
+  }).join("") + `<p class="fcm-advisor-note">Ранжирование: ${mode} вес FCM по сильнейшему пути к цели.</p>`;
 }
 
 async function renderFcm() {
   const mode = document.getElementById("fcmMode").value;
   state.graph = await api(`/api/fcm?mode=${mode}`);
+  renderFcmAdvisor();
   if (state.cy) state.cy.destroy();
   state.cy = cytoscape({
     container: document.getElementById("fcmGraph"), elements: [...state.graph.nodes, ...state.graph.edges],
@@ -327,9 +851,30 @@ async function renderFcm() {
     const target = state.metadata.nodes.find(node => node.id === edge.target);
     document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${source.label} → ${target.label}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${mode}»: ${edge.weight > 0 ? "+" : ""}${edge.weight.toFixed(3)}.</p>`;
   });
+  const fit = () => {
+    if (!state.cy) return;
+    state.cy.resize();
+    state.cy.layout({ name: "cose", animate: false, padding: 38, nodeRepulsion: 520000, idealEdgeLength: 110 }).run();
+    state.cy.fit(undefined, 36);
+  };
+  fit();
+  window.requestAnimationFrame(fit);
+  window.setTimeout(fit, 120);
 }
 
-function scenarioReference(scenario) { return scenario.database_id || scenario.id; }
+async function exportDataset() {
+  if (!state.datasetDetail) return;
+  const response = await fetch(`/api/datasets/${encodeURIComponent(state.datasetDetail.name)}/download`);
+  if (!response.ok) throw new Error("Не удалось выгрузить XLSX");
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = state.datasetDetail.name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function scenarioReference(scenario) { return scenario.id; }
 function scenarioByReference(reference) { return state.scenarios.find(item => scenarioReference(item) === reference); }
 
 function fillScenarioSelect(select) {
@@ -337,24 +882,45 @@ function fillScenarioSelect(select) {
   state.scenarios.forEach(item => {
     const option = document.createElement("option");
     option.value = scenarioReference(item);
-    const owner = item.owner ? ` · ${item.owner.display_name}` : "";
-    option.textContent = `${item.builtin ? "" : "★ "}${item.label}${owner}`;
+    option.textContent = `${item.builtin ? "" : "★ "}${item.label}`;
     select.appendChild(option);
   });
+}
+
+const indexControls = [
+  ["urban_environment", "Индекс качества современной городской среды", "Исполнение бюджета, благоустроенные дворы, удовлетворённость городской средой"],
+  ["road_quality_dtc", "Индекс качества ДТК", "Отремонтированные дороги, нормативное состояние дорог, пассажиропоток, средняя скорость, регулируемые переходы, исполнение бюджета, рейсы по расписанию, ДТП, срок устранения дефектов"],
+  ["accessible_environment", "Индекс качества доступной среды", "Исполнение бюджета, завершённые мероприятия, получатели адресной поддержки"],
+  ["public_spaces", "Индекс качества общественных пространств", "Исполнение бюджета, благоустроенные общественные территории, удовлетворённость городской средой"],
+  ["road_quality_transit", "Индекс качества ГОТ", "Отремонтированные дороги, нормативное состояние дорог, пассажиропоток, средняя скорость, регулируемые переходы, исполнение бюджета, рейсы по расписанию, ДТП, срок устранения дефектов"],
+  ["parking_safety", "Индекс качества парковок и безопасности движения", "Исполнение бюджета, отремонтированные дороги, нормативное состояние дорог, срок устранения дефектов"],
+];
+
+let indexRecalculationTimer = null;
+
+function indexValuesFromControls() {
+  return Object.fromEntries([...document.querySelectorAll("#scenarioSliders input[data-index]")]
+    .map(input => [input.dataset.index, Number(input.value)]));
 }
 
 function renderScenarioControls(selectedReference = null) {
   const select = document.getElementById("scenarioPreset");
   fillScenarioSelect(select);
+  if (!selectedReference && state.scenarios.some(item => item.id === "inertial")) select.value = "inertial";
   if (selectedReference && state.scenarios.some(item => scenarioReference(item) === selectedReference)) select.value = selectedReference;
-  const adjustable = state.metadata.nodes.filter(node => node.adjustable);
-  const primaryIds = new Set(["road_budget_execution", "transit_budget_execution", "safety_budget_execution", "road_repair", "crossings"]);
-  const renderSlider = node => `<div class="slider-item"><div class="slider-meta"><span>${node.label}</span><span id="value-${node.id}" class="slider-value">0.00</span></div><input type="range" min="-1" max="1" step="0.01" value="0" data-node="${node.id}" aria-label="${node.label}: от -1 до +1"></div>`;
-  const primary = adjustable.filter(node => primaryIds.has(node.id));
-  const advanced = adjustable.filter(node => !primaryIds.has(node.id));
-  document.getElementById("scenarioSliders").innerHTML = `${primary.map(renderSlider).join("")}<details><summary>Дополнительные узлы</summary>${advanced.map(renderSlider).join("")}</details>`;
-  document.querySelectorAll("#scenarioSliders input").forEach(input => input.addEventListener("input", () => {
-    document.getElementById(`value-${input.dataset.node}`).textContent = Number(input.value).toFixed(2);
+  state.baseIndexValues = Object.fromEntries(indexControls.map(([id]) => {
+    const item = state.indices.fuzzy.find(index => index.id === id);
+    return [id, Number(item.values.at(-1))];
+  }));
+  const renderSlider = ([id, label, description]) => {
+    const value = state.baseIndexValues[id];
+    return `<div class="slider-item"><div class="slider-meta"><span>${escapeHtml(label)}<small class="slider-description">${escapeHtml(description)}</small></span><span id="value-${id}" class="slider-value">${formatNumber(value, 1)}</span></div><input type="range" min="0" max="100" step="0.1" value="${value}" data-index="${id}" aria-label="${escapeHtml(label)}: от 0 до 100"></div>`;
+  };
+  document.getElementById("scenarioSliders").innerHTML = indexControls.map(renderSlider).join("");
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => input.addEventListener("input", () => {
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+    clearTimeout(indexRecalculationTimer);
+    indexRecalculationTimer = setTimeout(() => runScenario(), 250);
   }));
   applySelectedScenario();
 }
@@ -363,11 +929,6 @@ function applySelectedScenario() {
   const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
   if (!scenario) return;
   document.getElementById("scenarioDescription").textContent = scenario.description;
-  document.getElementById("scenarioOwner").textContent = scenario.builtin
-    ? "Общий встроенный сценарий"
-    : scenario.owner
-      ? `Владелец: ${scenario.owner.display_name} (@${scenario.owner.username})`
-      : "Ваш личный сценарий";
   document.getElementById("scenarioMode").value = scenario.mode;
   const horizon = document.getElementById("scenarioHorizon");
   if (![...horizon.options].some(option => Number(option.value) === Number(scenario.horizon))) {
@@ -375,26 +936,38 @@ function applySelectedScenario() {
   }
   horizon.value = scenario.horizon;
   state.baseImpulses = { ...scenario.impulses };
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     input.value = state.baseImpulses[input.dataset.node] || 0;
     input.dispatchEvent(new Event("input"));
   });
-  const canWrite = ["user", "admin"].includes(state.user.role);
-  document.getElementById("saveScenario").textContent = scenario.builtin ? "Сохранить копию" : "Сохранить изменения";
-  document.getElementById("deleteScenario").hidden = !canWrite || scenario.builtin;
-  const sharing = document.getElementById("scenarioSharing");
-  sharing.hidden = !canWrite || scenario.builtin;
-  if (!sharing.hidden) {
-    document.getElementById("observerShareList").innerHTML = '<span class="quiet-note">Загрузка наблюдателей…</span>';
-    loadScenarioSharing(scenario).catch(error => showToast(error.message, true));
-  }
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => {
+    input.value = scenario.index_values?.[input.dataset.index] ?? state.baseIndexValues[input.dataset.index];
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+  });
 }
 
-function resetSliders() { applySelectedScenario(); }
+function resetSliders() {
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => {
+    input.value = state.baseIndexValues[input.dataset.index];
+    document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
+  });
+  runScenario();
+}
+
+async function loadIndicesFromXlsx() {
+  const indices = await api("/api/indices");
+  state.indices = indices;
+  state.baseIndexValues = Object.fromEntries(indexControls.map(([id]) => {
+    const item = state.indices.fuzzy.find(index => index.id === id);
+    return [id, Number(item.values.at(-1))];
+  }));
+  resetSliders();
+  showToast("Индексы загружены из активного XLSX");
+}
 
 function scenarioImpulsesFromControls() {
   const impulses = {};
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     const value = Number(input.value);
     if (Math.abs(value) > .0001) impulses[input.dataset.node] = Number(value.toFixed(4));
   });
@@ -410,68 +983,30 @@ function scenarioPayloadFromControls(scenario, overrides = {}) {
     mode: document.getElementById("scenarioMode").value,
     horizon: Number(document.getElementById("scenarioHorizon").value),
     impulses: scenarioImpulsesFromControls(),
+    index_values: indexValuesFromControls(),
   };
 }
 
-async function saveCurrentScenario() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || !["user", "admin"].includes(state.user.role)) return;
-
+async function saveScenario() {
+  const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
+  if (!selected) return;
+  const nameInput = document.getElementById("scenarioSaveName");
+  const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  const isStored = !selected.builtin;
+  const label = nameInput.value.trim() || (isStored ? selected.label : `Пользовательский сценарий ${new Date().toLocaleString("ru-RU")}`);
+  const payload = scenarioPayloadFromControls(selected, {
+    id: isStored ? selected.id : `scenario-${timestamp}`,
+    label,
+    description: isStored ? selected.description : "Сценарий сохранён пользователем из лаборатории индексов.",
+  });
   try {
-    let saved;
-    if (scenario.builtin) {
-      const id = window.prompt("Идентификатор нового сценария (латиница, цифры, '-' или '_'):", `my-${scenario.id}`);
-      if (id == null) return;
-      const label = window.prompt("Название сценария:", `${scenario.label} — пользовательский`);
-      if (label == null) return;
-      const description = window.prompt("Описание сценария:", scenario.description || "Пользовательская копия встроенного сценария");
-      if (description == null) return;
-      const payload = scenarioPayloadFromControls(scenario, {
-        id: id.trim().toLowerCase(),
-        label: label.trim(),
-        description: description.trim(),
-      });
-      saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
-    } else {
-      const payload = scenarioPayloadFromControls(scenario);
-      saved = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-    }
-
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
-    renderScenarioControls(scenarioReference(saved));
-    showToast(`Сценарий «${saved.label}» сохранён в базе данных`);
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function loadScenarioSharing(scenario) {
-  const reference = scenarioReference(scenario);
-  const sharing = await api(`/api/scenarios/${encodeURIComponent(reference)}/shares`);
-  if (document.getElementById("scenarioPreset").value !== reference) return;
-  document.getElementById("observerShareList").innerHTML = sharing.observers.length
-    ? sharing.observers.map(observer => `<label class="observer-share-item">
-        <input type="checkbox" value="${escapeHtml(observer.id)}" ${observer.selected ? "checked" : ""}>
-        <span>${escapeHtml(observer.display_name)}<small>@${escapeHtml(observer.username)}</small></span>
-      </label>`).join("")
-    : '<span class="quiet-note">Активных наблюдателей пока нет.</span>';
-}
-
-async function saveScenarioSharing() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || scenario.builtin) return;
-  const observerIds = [...document.querySelectorAll("#observerShareList input:checked")]
-    .map(input => input.value);
-  try {
-    await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}/shares`, {
-      method: "PUT",
-      body: JSON.stringify({ observer_ids: observerIds }),
-    });
-    showToast(observerIds.length
-      ? `Доступ сохранён для наблюдателей: ${observerIds.length}`
-      : "Доступ наблюдателей закрыт");
+    const saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
+    const existingIndex = state.scenarios.findIndex(item => !item.builtin && item.id === saved.id);
+    if (existingIndex >= 0) state.scenarios.splice(existingIndex, 1, saved);
+    else state.scenarios.push(saved);
+    nameInput.value = "";
+    renderScenarioControls(saved.id);
+    showToast(`Сценарий «${saved.label}» сохранён в runtime/scenarios/${saved.id}.json`);
   } catch (error) { showToast(error.message, true); }
 }
 
@@ -482,32 +1017,14 @@ async function uploadScenario() {
   if (file.size > 65536) { showToast("JSON-файл превышает 64 КБ", true); return; }
   try {
     const payload = JSON.parse(await file.text());
-    let saved;
-    try {
-      saved = await api("/api/scenarios", { method: "POST", body: JSON.stringify(payload) });
-    } catch (error) {
-      const existing = state.scenarios.find(item => !item.builtin && item.id === String(payload.id || "").toLowerCase());
-      if (error.status !== 409 || !existing || !window.confirm(`Сценарий «${existing.label}» уже существует. Обновить его?`)) throw error;
-      saved = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(existing))}`, { method: "PUT", body: JSON.stringify(payload) });
-    }
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
+    const saved = await api("/api/scenarios/validate", { method: "POST", body: JSON.stringify(payload) });
+    const existingIndex = state.scenarios.findIndex(item => !item.builtin && item.id === saved.id);
+    if (existingIndex >= 0) state.scenarios.splice(existingIndex, 1, saved);
+    else state.scenarios.push(saved);
     renderScenarioControls(scenarioReference(saved));
     input.value = "";
-    showToast(`Сценарий «${saved.label}» сохранён`);
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function deleteSelectedScenario() {
-  const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
-  if (!scenario || scenario.builtin) return;
-  if (!window.confirm(`Удалить сценарий «${scenario.label}»?`)) return;
-  try {
-    await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}`, { method: "DELETE" });
-    const response = await api("/api/scenarios");
-    state.scenarios = response.scenarios;
-    renderScenarioControls();
-    showToast("Сценарий удалён");
+    showToast(`Сценарий «${saved.label}» загружен из JSON`);
+    await runScenario();
   } catch (error) { showToast(error.message, true); }
 }
 
@@ -515,7 +1032,7 @@ async function exportSelectedScenario() {
   const scenario = scenarioByReference(document.getElementById("scenarioPreset").value);
   if (!scenario) return;
   try {
-    const payload = await api(`/api/scenarios/${encodeURIComponent(scenarioReference(scenario))}/export`);
+    const payload = scenarioPayloadFromControls(scenario);
     const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `${payload.id}.json`; link.click();
@@ -559,11 +1076,73 @@ function renderBusinessSummary(result) {
     const trend = metric.delta_points > 0 ? "positive" : metric.delta_points < 0 ? "negative" : "neutral";
     const accident = key === "safety" && result.summary.accidents.improvement_percent != null
       ? `<span>Расчётное снижение ДТП: ${signed(result.summary.accidents.improvement_percent)}%</span>` : "";
-    return `<article class="panel business-kpi ${trend}" style="--accent:${color}">
-      <span>${label}</span><strong>${signed(metric.relative_change_percent)}%</strong>
-      <small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>${accident}
+    const quality = key === "integrated_mobility" ? interpretQualityIndex(Number(metric.scenario)) : null;
+    const qualityClass = quality ? {
+      "Катастрофическое": "critical", "Плохое": "poor", "Удовлетворительное": "satisfactory",
+      "Хорошее": "good", "Отличное": "excellent", "Превосходное": "superb",
+    }[quality.category] : "";
+    const valueMarkup = key === "integrated_mobility"
+      ? `<strong>${formatNumber(metric.scenario)}</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${signed(metric.relative_change_percent)}%</small>`
+      : `<strong>${signed(metric.relative_change_percent)}%</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>`;
+    return `<article class="panel business-kpi ${trend} ${qualityClass ? `quality-${qualityClass}` : ""}" style="--accent:${color}">
+      <span>${label}</span>${valueMarkup}${accident}
     </article>`;
   }).join("");
+}
+
+function interpretQualityIndex(score) {
+  if (score <= 20) return { category: "Катастрофическое", description: "Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
+  if (score <= 40) return { category: "Плохое", description: "Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
+  if (score <= 60) return { category: "Удовлетворительное", description: "Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
+  if (score <= 80) return { category: "Хорошее", description: "Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
+  if (score <= 95) return { category: "Отличное", description: "Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
+  return { category: "Превосходное", description: "Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
+}
+
+function renderImprovementRecommendations(score = null) {
+  const data = state.improvementRecommendations;
+  if (!data) return;
+  const objectiveId = document.getElementById("customerObjective").value;
+  const objective = data.objectives.find(item => item.id === objectiveId) || data.objectives[0];
+  const indicator = objective.indicator;
+  const interpretation = interpretQualityIndex(Number(score ?? objective.current));
+  const status = document.getElementById("recommendationStatus");
+  status.className = "recommendation-status neutral";
+  status.innerHTML = `<strong>${interpretation.category} -</strong><span>${interpretation.description} ${interpretation.action}</span>`;
+  document.getElementById("recommendationList").innerHTML = "";
+  document.getElementById("recommendationMethodology").textContent = "";
+}
+
+function applyRecommendedMeasure(factor) {
+  const input = document.querySelector(`#scenarioSliders input[data-node="${factor}"]`);
+  if (!input) { showToast("Для этой меры нужен прямой ввод данных в разделе квартала", true); return; }
+  input.value = Math.min(1, Number(input.value) + 0.10).toFixed(2);
+  input.dispatchEvent(new Event("input"));
+  showToast("Мера добавлена в сценарий с умеренным воздействием +0,10");
+  runScenario();
+}
+
+function syncCustomerObjective() {
+  const objective = document.getElementById("customerObjective").value;
+  const messages = {
+    traffic_safety: "Система оценивает динамику ДТП и ранжирует меры, которые сильнее всего повышают безопасность.",
+    transport_regularity: "Система ищет меры для соблюдения расписания и устойчивых интервалов движения.",
+    transport_accessibility: "Система показывает, какие связанные показатели сильнее всего улучшают доступность.",
+    integrated_mobility: "Система балансирует безопасность, регулярность и доступность без перекоса в одну метрику.",
+  };
+  document.getElementById("problemFocusHint").textContent = messages[objective];
+  if (state.improvementRecommendations) renderImprovementRecommendations();
+  if (state.budgetAnalysis) renderBudgetAnalysis();
+  const sensitivity = document.getElementById("sensitivityTarget");
+  if ([...sensitivity.options].some(option => option.value === objective)) {
+    sensitivity.value = objective;
+    if (state.evaluation) renderSensitivity();
+  }
+}
+
+async function recalculateForCustomerObjective() {
+  syncCustomerObjective();
+  await runScenario();
 }
 
 function budgetMetricCell(metric) {
@@ -572,7 +1151,13 @@ function budgetMetricCell(metric) {
 
 function renderBudgetAnalysis() {
   if (!state.budgetAnalysis) return;
-  const objective = document.getElementById("budgetObjective").value;
+  const objectiveMap = {
+    traffic_safety: "safety",
+    transport_regularity: "regularity",
+    transport_accessibility: "accessibility",
+    integrated_mobility: "integrated_mobility",
+  };
+  const objective = objectiveMap[document.getElementById("customerObjective").value];
   const programs = [...state.budgetAnalysis.programs].sort((a, b) =>
     (b.metrics[objective].relative_change_percent ?? -Infinity) - (a.metrics[objective].relative_change_percent ?? -Infinity));
   const names = { safety: "безопасности", regularity: "регулярности", accessibility: "доступности", integrated_mobility: "сбалансированного индекса" };
@@ -593,35 +1178,38 @@ function renderBudgetAnalysis() {
 async function runScenario() {
   const button = document.getElementById("runScenario");
   button.disabled = true; button.textContent = "Расчёт…";
+  const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
   const impulses = {};
-  document.querySelectorAll("#scenarioSliders input").forEach(input => {
+  if (selected?.builtin) document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     const delta = Number(input.value) - Number(state.baseImpulses[input.dataset.node] || 0);
     if (Math.abs(delta) > .0001) impulses[input.dataset.node] = delta;
   });
   try {
     const result = await api("/api/simulate", { method: "POST", body: JSON.stringify({
       scenario: document.getElementById("scenarioPreset").value,
+      scenario_payload: selected?.builtin ? null : scenarioPayloadFromControls(selected),
       mode: document.getElementById("scenarioMode").value,
       horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
+      index_values: indexValuesFromControls(),
     }) });
-    if (state.user.role !== "observer") {
-      await Promise.all([
-        plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
-        plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
-        plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы"),
-        plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
-      ]);
-    }
+    await Promise.all([
+      plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
+      plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
+      plotScenario("accessibilityPlot", result.baseline, result.scenario_result, "accessibility", "баллы"),
+      plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
+    ]);
     renderBusinessSummary(result);
     state.budgetAnalysis = result.budget_analysis;
+    state.improvementRecommendations = result.improvement_recommendations;
     renderBudgetAnalysis();
+    renderImprovementRecommendations(result.summary.integrated_mobility.scenario);
     document.getElementById("scenarioResultTitle").textContent = result.scenario.label;
     document.getElementById("scenarioExplanation").innerHTML = result.explanation.map(item => `<li>${item}</li>`).join("");
     document.getElementById("appliedImpulses").innerHTML = result.applied_impulses.length
       ? result.applied_impulses.map(item => `<span class="tag">${item.label}: ${item.value > 0 ? "+" : ""}${item.value.toFixed(2)}</span>`).join("")
       : '<span class="tag">Без внешних импульсов</span>';
   } catch (error) { showToast(error.message, true); }
-  finally { button.disabled = false; button.textContent = state.user.role === "observer" ? "Показать результат" : "Запустить прогноз"; }
+  finally { button.disabled = false; button.textContent = "Запустить прогноз"; }
 }
 
 function renderSensitivity() {
@@ -651,201 +1239,97 @@ function renderSensitivity() {
   }, plotConfig);
 }
 
-function showLogin(message = "") {
-  document.getElementById("appShell").hidden = true;
-  document.getElementById("loginView").hidden = false;
-  document.getElementById("loginError").textContent = message;
-  document.getElementById("loginPassword").value = "";
-  document.getElementById("loginUsername").focus();
-}
-
-function showApplication() {
-  document.getElementById("loginView").hidden = true;
-  document.getElementById("appShell").hidden = false;
-}
-
-function applyUserInterface() {
-  const labels = { observer: "Наблюдатель", user: "Пользователь", admin: "Администратор" };
-  const isObserver = state.user.role === "observer";
-  const appShell = document.getElementById("appShell");
-  appShell.classList.toggle("observer-mode", isObserver);
-  document.getElementById("currentUserName").textContent = state.user.display_name;
-  document.getElementById("currentUserRole").textContent = labels[state.user.role] || state.user.role;
-  const canWrite = ["user", "admin"].includes(state.user.role);
-  document.querySelectorAll(".role-editor").forEach(element => { element.hidden = !canWrite; });
-  document.getElementById("adminPanel").hidden = state.user.role !== "admin";
-  document.getElementById("heroEyebrow").textContent = isObserver ? "Режим наблюдателя" : "Аналитический прототип · 2006–2025";
-  document.getElementById("heroTitle").innerHTML = isObserver
-    ? "Доступные транспортные<br><em>сценарии и результаты</em>"
-    : "Транспортная доступность<br><em>и безопасность города</em>";
-  document.getElementById("heroCopy").textContent = isObserver
-    ? "Вам доступны все 7 разделов системы: лаборатория сценариев, чувствительность, текущее состояние, история, индексы, модели и карта связей. Данные открыты для просмотра без сложных настроек и редактирования."
-    : "Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.";
-  document.getElementById("heroPrimaryAction").textContent = isObserver ? "Открыть доступные сценарии" : "Запустить сценарий";
-  document.getElementById("scenarioControlKicker").textContent = isObserver ? "Доступные материалы" : "Настройки";
-  document.getElementById("scenarioControlTitle").textContent = isObserver ? "Выберите сценарий" : "Управляющие воздействия";
-  document.getElementById("runScenario").textContent = isObserver ? "Показать результат" : "Запустить прогноз";
-  sectionGuide.forEach(item => {
-    const section = document.getElementById(item.id);
-    section.hidden = false;
-    section.removeAttribute("aria-hidden");
-    section.querySelector(":scope > .section-heading .section-index").textContent = item.index;
-    setAccordionExpanded(section, isObserver && item.id === "scenarios");
-  });
-  if (state.user.must_change_password) showToast("Администратор потребовал сменить временный пароль", true);
-}
-
-async function login(event) {
-  event.preventDefault();
-  const button = document.getElementById("loginButton");
-  button.disabled = true; button.textContent = "Вход…";
-  document.getElementById("loginError").textContent = "";
-  try {
-    const result = await api("/api/auth/login", { method: "POST", body: JSON.stringify({
-      username: document.getElementById("loginUsername").value,
-      password: document.getElementById("loginPassword").value,
-    }) });
-    state.user = result.user; state.csrfToken = result.csrf_token;
-    showApplication(); applyUserInterface();
-    await initializeApplication();
-  } catch (error) {
-    document.getElementById("loginError").textContent = error.message;
-  } finally {
-    button.disabled = false; button.textContent = "Войти";
-  }
-}
-
-async function logout() {
-  try { await api("/api/auth/logout", { method: "POST" }); } catch (_) { /* session may already be gone */ }
-  state.user = null; state.csrfToken = null; state.budgetAnalysis = null;
-  showLogin("Вы вышли из системы");
-}
-
-async function changePassword() {
-  const currentPassword = window.prompt("Текущий пароль:");
-  if (currentPassword == null) return;
-  const newPassword = window.prompt("Новый пароль (не менее 10 символов):");
-  if (newPassword == null) return;
-  try {
-    await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
-    state.user.must_change_password = false;
-    showToast("Пароль изменён; другие сессии завершены");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function loadAdminPanel() {
-  if (state.user.role !== "admin") return;
-  const [usersResult, auditResult] = await Promise.all([api("/api/admin/users"), api("/api/admin/audit?limit=50")]);
-  document.getElementById("usersBody").innerHTML = usersResult.users.map(user => `<tr data-user-id="${user.id}">
-    <td><strong>${escapeHtml(user.display_name)}</strong><small class="table-subline">${escapeHtml(user.username)}</small></td>
-    <td><select class="admin-role"><option value="observer" ${user.role === "observer" ? "selected" : ""}>Наблюдатель</option><option value="user" ${user.role === "user" ? "selected" : ""}>Пользователь</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>Администратор</option></select></td>
-    <td><input class="admin-active" type="checkbox" ${user.is_active ? "checked" : ""} aria-label="Активен"></td>
-    <td><div class="table-actions"><button class="mini-button save-user" type="button">Сохранить</button><button class="mini-button reset-user" type="button">Пароль</button></div></td>
-  </tr>`).join("");
-  document.querySelectorAll(".save-user").forEach(button => button.addEventListener("click", () => updateAdminUser(button.closest("tr"))));
-  document.querySelectorAll(".reset-user").forEach(button => button.addEventListener("click", () => resetAdminPassword(button.closest("tr"))));
-  document.getElementById("auditList").innerHTML = auditResult.events.length ? auditResult.events.map(event => `<div class="audit-row">
-    <time>${new Date(`${event.created_at}Z`).toLocaleString("ru-RU")}</time><strong>${escapeHtml(event.action)}</strong><span>${escapeHtml(event.user?.username || "system")}</span>
-  </div>`).join("") : '<p class="quiet-note">Событий пока нет.</p>';
-}
-
-async function createAdminUser(event) {
-  event.preventDefault();
-  try {
-    await api("/api/admin/users", { method: "POST", body: JSON.stringify({
-      username: document.getElementById("newUsername").value,
-      display_name: document.getElementById("newDisplayName").value,
-      password: document.getElementById("newPassword").value,
-      role: document.getElementById("newRole").value,
-      must_change_password: true,
-    }) });
-    event.target.reset();
-    await loadAdminPanel();
-    showToast("Пользователь создан");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function updateAdminUser(row) {
-  try {
-    await api(`/api/admin/users/${row.dataset.userId}`, { method: "PATCH", body: JSON.stringify({
-      role: row.querySelector(".admin-role").value,
-      is_active: row.querySelector(".admin-active").checked,
-    }) });
-    await loadAdminPanel(); showToast("Права пользователя обновлены");
-  } catch (error) { showToast(error.message, true); }
-}
-
-async function resetAdminPassword(row) {
-  const password = window.prompt("Новый временный пароль (не менее 10 символов):");
-  if (password == null) return;
-  try {
-    await api(`/api/admin/users/${row.dataset.userId}/reset-password`, { method: "POST", body: JSON.stringify({ password, must_change_password: true }) });
-    showToast("Пароль сброшен, активные сессии завершены");
-    await loadAdminPanel();
-  } catch (error) { showToast(error.message, true); }
-}
-
 function bindEvents() {
   if (state.eventsBound) return;
   state.eventsBound = true;
+  document.getElementById("fcmAdvisorScenarios")?.addEventListener("change", event => {
+    if (event.target.matches('input[type="checkbox"]')) syncFcmAdvisorSelection(event.target);
+  });
+  document.getElementById("runFcmAdvisor")?.addEventListener("click", renderFcmAdvisor);
+  syncFcmAdvisorSelection();
   document.getElementById("historyMetric").addEventListener("change", renderHistory);
   document.getElementById("fuzzyIndexSelect").addEventListener("change", renderFuzzyIndexPlot);
   document.getElementById("evaluationTarget").addEventListener("change", renderEvaluation);
   document.getElementById("evaluationSplit").addEventListener("change", renderEvaluation);
   document.getElementById("fcmMode").addEventListener("change", () => renderFcm().catch(error => showToast(error.message, true)));
-  document.getElementById("scenarioPreset").addEventListener("change", applySelectedScenario);
-  document.getElementById("resetSliders").addEventListener("click", resetSliders);
-  document.getElementById("saveScenario").addEventListener("click", saveCurrentScenario);
-  document.getElementById("saveScenarioShares").addEventListener("click", saveScenarioSharing);
+  document.getElementById("scenarioPreset").addEventListener("change", async () => {
+    applySelectedScenario();
+    await runScenario();
+  });
+  document.getElementById("scenarioMode").addEventListener("change", () => runScenario());
+  document.getElementById("scenarioHorizon").addEventListener("change", () => runScenario());
+  document.getElementById("resetSliders")?.addEventListener("click", resetSliders);
+  document.getElementById("loadIndicesFromXlsx")?.addEventListener("click", () => loadIndicesFromXlsx().catch(error => showToast(error.message, true)));
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
-  document.getElementById("deleteScenario").addEventListener("click", deleteSelectedScenario);
+  document.getElementById("saveScenario").addEventListener("click", saveScenario);
   document.getElementById("exportScenario").addEventListener("click", exportSelectedScenario);
   document.getElementById("runScenario").addEventListener("click", runScenario);
+  document.getElementById("customerObjective").addEventListener("change", () => {
+    recalculateForCustomerObjective().catch(error => showToast(error.message, true));
+  });
+  document.getElementById("recommendationList").addEventListener("click", event => {
+    const button = event.target.closest(".recommendation-action");
+    if (button) applyRecommendedMeasure(button.dataset.factor);
+  });
   document.getElementById("sensitivityTarget").addEventListener("change", renderSensitivity);
-  document.getElementById("budgetObjective").addEventListener("change", renderBudgetAnalysis);
-  document.getElementById("logoutButton").addEventListener("click", logout);
-  document.getElementById("changePassword").addEventListener("click", changePassword);
-  document.getElementById("createUserForm").addEventListener("submit", createAdminUser);
+  document.getElementById("boxplotGroup").addEventListener("change", renderBoxplots);
+  document.getElementById("membershipIndex").addEventListener("change", renderMembershipVariableOptions);
+  document.getElementById("membershipVariable").addEventListener("change", renderMembershipPlot);
+  document.getElementById("datasetSelect").addEventListener("change", event => {
+    window.localStorage.setItem("smolensk.activeDataset", event.target.value);
+    loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true));
+  });
+  document.getElementById("uploadDataset").addEventListener("click", uploadDataset);
+  document.getElementById("datasetRowSelect").addEventListener("change", event => populateDatasetRow(event.target.value));
+  document.getElementById("activateDataset").addEventListener("click", activateDataset);
+  document.getElementById("saveDataset")?.addEventListener("click", saveDatasetRow);
+  document.getElementById("exportDataset")?.addEventListener("click", exportDataset);
+  document.getElementById("newDatasetRow").addEventListener("click", () => {
+    document.getElementById("datasetRowSelect").value = "__new__";
+    populateDatasetRow("__new__");
+    document.querySelector(".dataset-field-details").open = true;
+  });
+  document.getElementById("saveDatasetRow").addEventListener("click", saveDatasetRow);
+  document.getElementById("retrainModels")?.addEventListener("click", retrainModels);
 }
 
 async function initializeApplication() {
   const status = document.getElementById("apiStatus");
   try {
-    const isObserver = state.user.role === "observer";
-    const [health, metadata, history, indices, evaluation, scenarios] = await Promise.all([
-      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/scenarios"),
+    const [health, metadata, history, indices, evaluation, analysis, scenarios, datasets, modelStatus] = await Promise.all([
+      api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"), api("/api/models/status"),
     ]);
-    Object.assign(state, { metadata, history, indices, evaluation, scenarios: scenarios.scenarios });
-    status.className = "status-pill ready"; status.innerHTML = isObserver
-      ? "<span></span>Доступны 7 разделов"
-      : `<span></span>Готово · ${health.periods} кварталов`;
+    Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, modelStatus, scenarios: scenarios.scenarios });
+    status.className = "status-pill ready"; status.setAttribute("aria-label", `Готово · ${health.periods} кварталов`); status.innerHTML = "<span></span>";
     renderOverview();
     renderScenarioControls(); bindEvents();
-    fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "integrated_mobility";
+    fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "pipeline_target";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
-    fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.targets);
-    renderHistory(); renderIndices(); renderEvaluation(); renderAnfisCards(); renderSensitivity();
+    fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
+    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective();
+    const remembered = window.localStorage.getItem("smolensk.activeDataset");
+    const initialDataset = state.datasets.datasets.some(item => item.name === remembered)
+      ? remembered
+      : (state.datasets.datasets.some(item => item.name === "smolensk_dataset_shared.xlsx") ? "smolensk_dataset_shared.xlsx" : state.datasets.active);
+    document.getElementById("datasetSelect").value = initialDataset;
+    window.localStorage.setItem("smolensk.activeDataset", initialDataset);
+    await loadDatasetDetail(initialDataset);
+    // Дождаться первого layout-прохода браузера: Cytoscape иначе получает нулевой контейнер.
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
     await renderFcm();
+    window.setTimeout(() => {
+      if (!state.cy || state.cy.nodes().length === 0) renderFcm().catch(error => showToast(error.message, true));
+    }, 450);
     await runScenario();
-    await loadAdminPanel();
   } catch (error) {
-    if (error.status === 401) { showLogin("Сессия истекла. Войдите снова."); return; }
-    status.className = "status-pill error"; status.innerHTML = "<span></span>Ошибка запуска";
+    status.className = "status-pill error"; status.setAttribute("aria-label", "Ошибка запуска"); status.innerHTML = "<span></span>";
     showToast(`Не удалось запустить интерфейс: ${error.message}`, true); console.error(error);
   }
 }
 
 async function bootstrap() {
   initializePageStructure();
-  document.getElementById("loginForm").addEventListener("submit", login);
-  try {
-    const result = await api("/api/auth/me");
-    state.user = result.user; state.csrfToken = result.csrf_token;
-    showApplication(); applyUserInterface();
-    await initializeApplication();
-  } catch (error) {
-    showLogin(error.status === 401 ? "" : `Не удалось проверить сессию: ${error.message}`);
-  }
+  await initializeApplication();
 }
 
 window.addEventListener("DOMContentLoaded", bootstrap);

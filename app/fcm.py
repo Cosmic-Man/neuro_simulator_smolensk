@@ -49,47 +49,11 @@ EXPERT_EDGES = (
 
 
 ADJUSTABLE_SPECS = tuple(spec for spec in NODE_SPECS if spec.adjustable)
-IMPROVEMENT_SPECS = tuple(spec for spec in ADJUSTABLE_SPECS if spec.id != "congestion")
-REALLOCATION_FOCUS_IDS = (
-    "road_budget_execution",
-    "transit_budget_execution",
-    "safety_budget_execution",
-)
 REVERSE_REALLOCATION_FOCUS_IDS = (
     "congestion",
     "road_repair",
 )
 REALLOCATION_SHARE = 1.0 / (len(ADJUSTABLE_SPECS) - 1)
-
-
-def _point_improvement_scenario(node_id: str, label: str) -> dict[str, object]:
-    return {
-        "version": 1,
-        "label": f"Точечный +1 · {label}",
-        "description": f"Только фактор «{label}» получает максимальный положительный импульс +1; остальные факторы не изменяются.",
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": {node_id: 1.0},
-    }
-
-
-def _reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
-    impulses = {
-        spec.id: (1.0 if spec.id == focus_id else -REALLOCATION_SHARE)
-        for spec in ADJUSTABLE_SPECS
-    }
-    return {
-        "version": 1,
-        "label": f"+1 одному, −1 суммарно остальным · {focus_label}",
-        "description": (
-            f"Тип перераспределения: +1 одному фактору, −1 суммарно остальным. Фактор «{focus_label}» получает +1. "
-            "От каждого из остальных управляемых факторов отнимается по 0,10: "
-            "суммарное снижение равно −1, поэтому общий баланс импульсов равен нулю."
-        ),
-        "mode": "adapted",
-        "horizon": 8,
-        "impulses": impulses,
-    }
 
 
 def _reverse_reallocation_scenario(focus_id: str, focus_label: str) -> dict[str, object]:
@@ -113,34 +77,97 @@ def _reverse_reallocation_scenario(focus_id: str, focus_label: str) -> dict[str,
 
 _LABEL_BY_ID = {spec.id: spec.label for spec in ADJUSTABLE_SPECS}
 
+RELATION_SCENARIOS: dict[str, dict[str, object]] = {
+    "relation_road_repair": {
+        "version": 1,
+        "label": "Связь · ремонт дорог → нормативное состояние",
+        "description": "Проверяет, как максимальное усиление ремонта дорог меняет состояние дорожной сети и связанные показатели.",
+        "mode": "adapted", "horizon": 8, "impulses": {"road_repair": 1.0},
+    },
+    "relation_road_condition": {
+        "version": 1,
+        "label": "Связь · состояние дорог → безопасность и время поездки",
+        "description": "Улучшение нормативного состояния дорог должно снижать загруженность и поддерживать безопасность движения.",
+        "mode": "adapted", "horizon": 8, "impulses": {"road_condition": 1.0},
+    },
+    "relation_lighting_proxy": {
+        "version": 1,
+        "label": "Связь · освещённость и переходы → безопасность",
+        "description": "В датасете нет отдельного ряда освещённости, поэтому используется ближайший измеримый показатель — регулируемые переходы.",
+        "mode": "adapted", "horizon": 8, "impulses": {"crossings": 1.0},
+    },
+    "relation_regularity": {
+        "version": 1,
+        "label": "Связь · регулярность → доступность транспорта",
+        "description": "Показывает эффект максимального повышения доли рейсов, выполненных по расписанию.",
+        "mode": "adapted", "horizon": 8, "impulses": {"transport_regularity": 1.0},
+    },
+    "relation_digital_control": {
+        "version": 1,
+        "label": "Связь · цифровое управление → пропускная способность",
+        "description": "Прокси-сценарий цифрового управления: скорость повышается, а загруженность снижается одновременно.",
+        "mode": "adapted", "horizon": 8, "impulses": {"average_speed": 0.6, "congestion": -0.4},
+    },
+    "relation_travel_time": {
+        "version": 1,
+        "label": "Связь · снижение времени поездки → доступность",
+        "description": "Среднее время поездки представлено обратным показателем загруженности: импульс −1 означает её максимальное снижение.",
+        "mode": "adapted", "horizon": 8, "impulses": {"congestion": -1.0},
+    },
+    "relation_accident_growth": {
+        "version": 1,
+        "label": "Риск · рост аварийности → снижение результата",
+        "description": "Стресс-сценарий ухудшения безопасности движения для оценки устойчивости транспортной системы.",
+        "mode": "adapted", "horizon": 8, "impulses": {"traffic_safety": -1.0},
+    },
+    "relation_pedestrian_space": {
+        "version": 1,
+        "label": "Баланс · пешеходная инфраструктура и дорожное пространство",
+        "description": "Переходы усиливаются, но небольшая часть пропускной способности перераспределяется в пользу пешеходов.",
+        "mode": "adapted", "horizon": 8, "impulses": {"crossings": 1.0, "average_speed": -0.2},
+    },
+}
+
 BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
-    **{
-        f"improve_{spec.id}": _point_improvement_scenario(spec.id, spec.label)
-        for spec in IMPROVEMENT_SPECS
-    },
-    **{
-        f"reallocate_{focus_id}": _reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
-        for focus_id in REALLOCATION_FOCUS_IDS
-    },
-    **{
-        f"reverse_reallocate_{focus_id}": _reverse_reallocation_scenario(focus_id, _LABEL_BY_ID[focus_id])
-        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS
-    },
     "inertial": {
         "version": 1,
-        "label": "Инерционный · без импульсов",
-        "description": "Продолжение текущей динамики без внешнего импульса.",
+        "label": "Инерционный сценарий",
+        "description": "Темпы ремонта дорог, развитие общественного транспорта и цифровизация сохраняются без значительных изменений.",
         "mode": "adapted",
-        "horizon": 8,
+        "horizon": 1,
         "impulses": {},
     },
-    "custom": {
+    "road_infrastructure_decline": {
         "version": 1,
-        "label": "Пользовательский · ручная настройка",
-        "description": "Собственный набор управляющих воздействий.",
+        "label": "Ухудшение дорожной инфраструктуры",
+        "description": "Ремонт дорог замедляется, доля дорог в нормативном состоянии снижается, число аварийно-опасных участков растёт. Модель показывает последствия для аварийности, времени поездки и удовлетворённости.",
         "mode": "adapted",
         "horizon": 8,
-        "impulses": {},
+        "impulses": {"road_repair": -0.75, "road_condition": -0.75, "defect_response": -0.55},
+    },
+    "public_transport_priority": {
+        "version": 1,
+        "label": "Приоритет общественного транспорта",
+        "description": "Улучшаются регулярность движения, состояние остановок, маршрутная связанность и пассажиропоток. Модель оценивает снижение нагрузки на дороги и рост доступности социальных объектов.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"transit_budget_execution": 0.8, "transport_regularity": 0.8, "passenger_flow": 0.55},
+    },
+    "digital_mobility": {
+        "version": 1,
+        "label": "Цифровая мобильность",
+        "description": "Вводятся интеллектуальные светофоры, мониторинг потоков и цифровое управление маршрутами. Модель показывает, когда цифровые меры дают значимый эффект, а когда их ограничивает физическое состояние инфраструктуры.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"average_speed": 0.65, "congestion": -0.65, "transport_regularity": 0.35},
+    },
+    "traffic_safety_priority": {
+        "version": 1,
+        "label": "Безопасность движения",
+        "description": "Ресурсы направляются на освещение, пешеходную инфраструктуру, ликвидацию аварийно-опасных участков и организацию движения. Оценивается влияние на ДТП и воспринимаемую безопасность.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"safety_budget_execution": 0.8, "crossings": 0.85, "road_repair": 0.35},
     },
 }
 

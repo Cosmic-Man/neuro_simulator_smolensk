@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "scenario-20260722233144",
+  "label": "Тест",
+  "description": "Сценарий сохранён пользователем из лаборатории индексов.",
+  "mode": "adapted",
+  "horizon": 8,
+  "impulses": {},
+  "index_values": {
+    "urban_environment": 0.0,
+    "road_quality_dtc": 95.6,
+    "accessible_environment": 78.9,
+    "public_spaces": 95.5,
+    "road_quality_transit": 90.6,
+    "parking_safety": 95.2
+  }
+}

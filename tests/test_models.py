@@ -11,7 +11,6 @@ from app.data import NODE_SPECS
 from app.fcm import (
     BUILTIN_SCENARIOS,
     EXPERT_EDGES,
-    REALLOCATION_FOCUS_IDS,
     REVERSE_REALLOCATION_FOCUS_IDS,
 )
 from app.models import ANFIS, ModelArtifactError
@@ -44,6 +43,13 @@ class ModelTests(unittest.TestCase):
                 self.service.anfis_model_sources[target],
                 {"artifact", "trained_and_cached", "trained_in_memory"},
             )
+        self.assertEqual(len(self.service.pipeline_anfis.feature_names), 6)
+        self.assertEqual(self.service.pipeline_anfis.rule_count, 8)
+        self.assertTrue(math.isfinite(self.service.pipeline_anfis.validation_rmse_))
+        status = self.service.training_status()
+        self.assertEqual(status["trained_through"], self.service.bundle.raw.index[-1])
+        self.assertEqual(status["training_samples"], len(self.service.bundle.raw) - 1)
+        self.assertFalse(status["pending_retrain"])
 
     def test_anfis_artifact_round_trip_and_compatibility_checks(self) -> None:
         x_train = np.asarray(
@@ -87,73 +93,88 @@ class ModelTests(unittest.TestCase):
                 )
 
     def test_all_evaluation_metrics_are_finite(self) -> None:
-        for target in self.service.evaluation()["targets"]:
+        evaluation = self.service.evaluation()
+        catalog = evaluation["model_catalog"]
+        self.assertEqual([item["id"] for item in catalog], list(evaluation["model_labels"]))
+        self.assertEqual(len(catalog), 3)
+        for item in catalog:
+            for key in ("label", "role", "how", "inputs", "purpose"):
+                self.assertTrue(item[key].strip(), f"{item['id']} {key}")
+        for target in evaluation["targets"]:
             for row in target["metrics"]:
                 for key in ("mae", "rmse", "smape", "mase", "directional_accuracy"):
                     self.assertTrue(math.isfinite(row[key]), f"{target['id']} {row['model']} {key}")
 
+    def test_pipeline_anfis_predicts_next_quarter_without_same_period_leakage(self) -> None:
+        target = self.service.evaluation()["targets"][0]
+        rows = target["predictions"]["validation"] + target["predictions"]["test"]
+        periods = list(self.service.bundle.fuzzy_indices.index.astype(str))
+        for row in rows:
+            target_index = periods.index(row["period"])
+            self.assertEqual(row["input_period"], periods[target_index - 1])
+            self.assertNotEqual(row["input_period"], row["period"])
+
+        anfis_metrics = [row for row in target["metrics"] if row["model"] == "anfis"]
+        self.assertTrue(all(row["rmse"] > 1e-9 for row in anfis_metrics))
+
+    def test_six_pipeline_controls_predict_final_index(self) -> None:
+        baseline = self.service.simulate_pipeline_index(horizon=4)
+        self.assertEqual(baseline["rule_count"], 8)
+        self.assertEqual(len(baseline["inputs"]), 6)
+        self.assertEqual(len(baseline["forecast"]), 4)
+        self.assertEqual(baseline["forecast"][-1]["period"], baseline["forecast_period"])
+        self.assertEqual(len(baseline["recommendations"]), 3)
+        self.assertIn("label", baseline["level"])
+        self.assertNotEqual(baseline["input_period"], baseline["forecast_period"])
+        self.assertAlmostEqual(baseline["baseline_prediction"], baseline["scenario_prediction"])
+        values = dict(baseline["baseline_values"])
+        values["urban_environment"] = max(0.0, values["urban_environment"] - 10.0)
+        changed = self.service.simulate_pipeline_index(values)
+        self.assertNotEqual(changed["scenario_prediction"], changed["baseline_prediction"])
+
     def test_scenario_directions_are_plausible(self) -> None:
-        safety = self.service.simulate("improve_safety_budget_execution")
+        safety = self.service.simulate("inertial", custom_impulses={"safety_budget_execution": 1.0})
         self.assertGreater(safety["scenario_result"][-1]["safety_index"], safety["baseline"][-1]["safety_index"])
         self.assertLess(safety["scenario_result"][-1]["accidents"], safety["baseline"][-1]["accidents"])
 
-        transit = self.service.simulate("improve_transit_budget_execution")
+        transit = self.service.simulate("inertial", custom_impulses={"transit_budget_execution": 1.0})
         self.assertGreater(transit["scenario_result"][-1]["regularity"], transit["baseline"][-1]["regularity"])
         self.assertGreater(transit["scenario_result"][-1]["accessibility"], transit["baseline"][-1]["accessibility"])
 
-        roads = self.service.simulate("improve_road_budget_execution")
+    def test_customer_index_values_update_accessibility_forecast(self) -> None:
+        baseline_value = float(self.service.bundle.fuzzy_indices.iloc[-1]["accessible_environment"])
+        result = self.service.simulate(
+            "inertial",
+            index_values={"accessible_environment": min(100.0, baseline_value + 10.0)},
+        )
+        self.assertNotEqual(
+            result["scenario_result"][-1]["accessibility"],
+            result["baseline"][-1]["accessibility"],
+        )
+
+    def test_all_customer_index_controls_are_mapped_to_fcm_nodes(self) -> None:
+        values = {
+            index_id: float(self.service.bundle.fuzzy_indices.iloc[-1][index_id])
+            for index_id in (
+                "urban_environment", "road_quality_dtc", "accessible_environment",
+                "public_spaces", "road_quality_transit", "parking_safety",
+            )
+        }
+        result = self.service.simulate("inertial", index_values=values)
+        self.assertEqual(len(result["scenario_result"]), result["horizon"] + 1)
+
+        roads = self.service.simulate("inertial", custom_impulses={"road_budget_execution": 1.0})
         self.assertGreater(roads["scenario_result"][-1]["accessibility"], roads["baseline"][-1]["accessibility"])
 
-    def test_builtin_scenarios_follow_point_and_reallocation_rules(self) -> None:
-        adjustable = {spec.id for spec in NODE_SPECS if spec.adjustable}
-        point_scenarios = {
-            scenario_id: scenario
-            for scenario_id, scenario in BUILTIN_SCENARIOS.items()
-            if scenario_id.startswith("improve_")
-        }
-        self.assertEqual(len(point_scenarios), 10)
-        for scenario in point_scenarios.values():
-            self.assertEqual(len(scenario["impulses"]), 1)
-            self.assertEqual(next(iter(scenario["impulses"].values())), 1.0)
-
-        reallocation_scenarios = {
-            scenario_id: scenario
-            for scenario_id, scenario in BUILTIN_SCENARIOS.items()
-            if scenario_id.startswith("reallocate_")
-        }
-        self.assertEqual(len(reallocation_scenarios), len(REALLOCATION_FOCUS_IDS))
-        for focus_id in REALLOCATION_FOCUS_IDS:
-            impulses = reallocation_scenarios[f"reallocate_{focus_id}"]["impulses"]
-            self.assertEqual(set(impulses), adjustable)
-            self.assertEqual(impulses[focus_id], 1.0)
-            negatives = [value for node, value in impulses.items() if node != focus_id]
-            self.assertTrue(all(value < 0 for value in negatives))
-            self.assertAlmostEqual(sum(negatives), -1.0)
-            self.assertAlmostEqual(sum(impulses.values()), 0.0)
-
-        reverse_scenarios = {
-            scenario_id: scenario
-            for scenario_id, scenario in BUILTIN_SCENARIOS.items()
-            if scenario_id.startswith("reverse_reallocate_")
-        }
-        self.assertEqual(len(reverse_scenarios), len(REVERSE_REALLOCATION_FOCUS_IDS))
-        kind_by_id = {spec.id: spec.kind for spec in NODE_SPECS}
-        for focus_id in REVERSE_REALLOCATION_FOCUS_IDS:
-            self.assertNotEqual(kind_by_id[focus_id], "target")
-            scenario = reverse_scenarios[f"reverse_reallocate_{focus_id}"]
-            impulses = scenario["impulses"]
-            self.assertEqual(set(impulses), adjustable)
-            self.assertEqual(impulses[focus_id], -1.0)
-            positives = [value for node, value in impulses.items() if node != focus_id]
-            self.assertTrue(all(value > 0 for value in positives))
-            self.assertAlmostEqual(sum(positives), 1.0)
-            self.assertAlmostEqual(sum(impulses.values()), 0.0)
-
-        self.assertEqual(len(BUILTIN_SCENARIOS), 17)
+    def test_five_builtin_scenarios_are_available(self) -> None:
+        self.assertEqual(list(BUILTIN_SCENARIOS), [
+            "inertial", "road_infrastructure_decline", "public_transport_priority",
+            "digital_mobility", "traffic_safety_priority",
+        ])
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            self.service.simulate("custom", custom_impulses={"unknown": 0.1})
+            self.service.simulate("inertial", custom_impulses={"unknown": 0.1})
 
 
 if __name__ == "__main__":

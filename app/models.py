@@ -354,6 +354,192 @@ class ANFIS:
         return effects
 
 
+class RobustScaler:
+    """Минимальный RobustScaler: медиана и межквартильный размах."""
+
+    def __init__(self) -> None:
+        self.center_: np.ndarray | None = None
+        self.scale_: np.ndarray | None = None
+
+    def fit(self, values: np.ndarray) -> "RobustScaler":
+        array = np.asarray(values, dtype=float)
+        self.center_ = np.median(array, axis=0)
+        q1, q3 = np.percentile(array, [25, 75], axis=0)
+        self.scale_ = np.where(np.abs(q3 - q1) < 1e-12, 1.0, q3 - q1)
+        return self
+
+    def transform(self, values: np.ndarray) -> np.ndarray:
+        if self.center_ is None or self.scale_ is None:
+            raise RuntimeError("RobustScaler ещё не обучен")
+        return (np.asarray(values, dtype=float) - self.center_) / self.scale_
+
+    def inverse_transform(self, values: np.ndarray) -> np.ndarray:
+        if self.center_ is None or self.scale_ is None:
+            raise RuntimeError("RobustScaler ещё не обучен")
+        return np.asarray(values, dtype=float) * self.scale_ + self.center_
+
+
+class PipelineANFIS:
+    """NumPy-перенос архитектуры ANFIS из ``Pipeline.ipynb``.
+
+    Восемь гауссовых правил, общий sigma на правило и линейные консеквенты.
+    Параметры обучаются Adam с теми же основными гиперпараметрами notebook.
+    """
+
+    def __init__(
+        self,
+        feature_names: Sequence[str],
+        *,
+        n_rules: int = 8,
+        epochs: int = 500,
+        learning_rate: float = 0.05,
+        patience: int = 70,
+        weight_decay: float = 1e-3,
+        random_state: int = 42,
+    ) -> None:
+        self.feature_names = list(feature_names)
+        self.n_rules = int(n_rules)
+        self.epochs = int(epochs)
+        self.learning_rate = float(learning_rate)
+        self.patience = int(patience)
+        self.weight_decay = float(weight_decay)
+        self.random_state = int(random_state)
+        self.centers_: np.ndarray | None = None
+        self.sigmas_: np.ndarray | None = None
+        self.consequents_: np.ndarray | None = None
+        self.validation_rmse_: float | None = None
+        self.trained_epochs_: int = 0
+
+    @property
+    def rule_count(self) -> int:
+        return self.n_rules
+
+    @staticmethod
+    def _kmeans_plus_plus(array: np.ndarray, clusters: int, rng: np.random.RandomState) -> np.ndarray:
+        centers = [array[rng.randint(len(array))].copy()]
+        for _ in range(1, clusters):
+            squared = np.min(
+                np.sum((array[:, None, :] - np.asarray(centers)[None, :, :]) ** 2, axis=2),
+                axis=1,
+            )
+            total = float(squared.sum())
+            index = rng.randint(len(array)) if total <= 1e-12 else rng.choice(len(array), p=squared / total)
+            centers.append(array[index].copy())
+        return np.asarray(centers)
+
+    def _kmeans(self, array: np.ndarray) -> np.ndarray:
+        best: tuple[float, np.ndarray] | None = None
+        for run in range(10):
+            rng = np.random.RandomState(self.random_state + run)
+            centers = self._kmeans_plus_plus(array, self.n_rules, rng)
+            for _ in range(100):
+                distances = np.sum((array[:, None, :] - centers[None, :, :]) ** 2, axis=2)
+                labels = np.argmin(distances, axis=1)
+                updated = centers.copy()
+                for cluster in range(self.n_rules):
+                    members = array[labels == cluster]
+                    if len(members):
+                        updated[cluster] = members.mean(axis=0)
+                if np.allclose(updated, centers, atol=1e-7):
+                    centers = updated
+                    break
+                centers = updated
+            inertia = float(np.min(np.sum((array[:, None, :] - centers[None, :, :]) ** 2, axis=2), axis=1).sum())
+            if best is None or inertia < best[0]:
+                best = (inertia, centers.copy())
+        assert best is not None
+        return best[1]
+
+    def _forward(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.centers_ is None or self.sigmas_ is None or self.consequents_ is None:
+            raise RuntimeError("PipelineANFIS ещё не обучен")
+        diff = x[:, None, :] - self.centers_[None, :, :]
+        sigma = self.sigmas_[None, :, None]
+        memberships = np.exp(-0.5 * (diff / sigma) ** 2)
+        firing = np.prod(memberships, axis=2)
+        normalized = firing / np.maximum(firing.sum(axis=1, keepdims=True), 1e-8)
+        x_bias = np.column_stack([np.ones(len(x)), x])
+        rule_outputs = x_bias @ self.consequents_.T
+        prediction = np.sum(normalized * rule_outputs, axis=1)
+        return prediction, normalized, rule_outputs
+
+    def fit(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_validation: np.ndarray,
+        y_validation: np.ndarray,
+    ) -> "PipelineANFIS":
+        x_train = np.asarray(x_train, dtype=float)
+        y_train = np.asarray(y_train, dtype=float).reshape(-1)
+        x_validation = np.asarray(x_validation, dtype=float)
+        y_validation = np.asarray(y_validation, dtype=float).reshape(-1)
+        if x_train.shape[1] != len(self.feature_names):
+            raise ValueError("Число входов PipelineANFIS не совпадает с feature_names")
+        if len(x_train) < self.n_rules:
+            raise ValueError("Для инициализации ANFIS недостаточно строк")
+
+        self.centers_ = self._kmeans(x_train)
+        distances = np.linalg.norm(x_train[:, None, :] - self.centers_[None, :, :], axis=2)
+        self.sigmas_ = np.clip(distances.mean(axis=0), 0.1, 1.5)
+        # Как в Pipeline (2).ipynb: небольшие случайные консеквенты и среднее train-target
+        # в свободном члене каждого правила. Фиксированный seed делает перенос воспроизводимым.
+        rng = np.random.RandomState(self.random_state)
+        self.consequents_ = rng.normal(0.0, 0.01, size=(self.n_rules, x_train.shape[1] + 1))
+        self.consequents_[:, 0] = float(y_train.mean())
+
+        parameters = [self.centers_, self.sigmas_, self.consequents_]
+        first_moments = [np.zeros_like(value) for value in parameters]
+        second_moments = [np.zeros_like(value) for value in parameters]
+        initial_validation = self.predict(x_validation)
+        best_loss = float(np.mean((initial_validation - y_validation) ** 2))
+        best_state: tuple[np.ndarray, np.ndarray, np.ndarray] | None = tuple(
+            value.copy() for value in parameters
+        )
+        patience_counter = 0
+
+        for epoch in range(1, self.epochs + 1):
+            prediction, normalized, rule_outputs = self._forward(x_train)
+            error = prediction - y_train
+            common = (2.0 / len(x_train)) * error[:, None] * normalized * (rule_outputs - prediction[:, None])
+            diff = x_train[:, None, :] - self.centers_[None, :, :]
+            sigma = self.sigmas_[None, :, None]
+            grad_centers = np.sum(common[:, :, None] * diff / (sigma**2), axis=0)
+            grad_sigmas = np.sum(common * np.sum(diff**2, axis=2) / (self.sigmas_[None, :] ** 3), axis=0)
+            x_bias = np.column_stack([np.ones(len(x_train)), x_train])
+            grad_consequents = ((2.0 / len(x_train)) * error[:, None] * normalized).T @ x_bias
+            gradients = [grad_centers, grad_sigmas, grad_consequents]
+
+            for index, (parameter, gradient) in enumerate(zip(parameters, gradients, strict=True)):
+                gradient = gradient + self.weight_decay * parameter
+                first_moments[index] = 0.9 * first_moments[index] + 0.1 * gradient
+                second_moments[index] = 0.999 * second_moments[index] + 0.001 * gradient**2
+                m_hat = first_moments[index] / (1.0 - 0.9**epoch)
+                v_hat = second_moments[index] / (1.0 - 0.999**epoch)
+                parameter -= self.learning_rate * m_hat / (np.sqrt(v_hat) + 1e-8)
+            self.sigmas_[:] = np.clip(np.abs(self.sigmas_), 0.05, 2.5)
+
+            validation_prediction = self.predict(x_validation)
+            validation_loss = float(np.mean((validation_prediction - y_validation) ** 2))
+            if validation_loss < best_loss:
+                best_loss = validation_loss
+                best_state = tuple(value.copy() for value in parameters)
+                patience_counter = 0
+            else:
+                patience_counter += 1
+            self.trained_epochs_ = epoch
+            if patience_counter >= self.patience:
+                break
+
+        assert best_state is not None
+        self.centers_[:], self.sigmas_[:], self.consequents_[:] = best_state
+        self.validation_rmse_ = float(np.sqrt(best_loss))
+        return self
+
+    def predict(self, values: np.ndarray) -> np.ndarray:
+        return self._forward(np.asarray(values, dtype=float))[0]
+
+
 # Совместимость для внешнего кода предыдущей версии.
 ANFISRegressor = ANFIS
 

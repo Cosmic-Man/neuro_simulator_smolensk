@@ -1,29 +1,28 @@
 from __future__ import annotations
 
+import json
+import os
 import re
-import uuid
+import tempfile
+from pathlib import Path
 from typing import Any, Mapping
 
-from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
-
-from .config import IMPULSE_LIMIT
+from .config import IMPULSE_LIMIT, PROJECT_ROOT
 from .data import NODE_SPECS
-from .db_models import Scenario, ScenarioShare, User
 from .fcm import BUILTIN_SCENARIOS
 
 
 SCENARIO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 ADJUSTABLE_NODES = {spec.id for spec in NODE_SPECS if spec.adjustable}
-
-
-class ScenarioConflictError(ValueError):
-    pass
-
-
-class ScenarioNotFoundError(ValueError):
-    pass
+INDEX_CONTROL_IDS = {
+    "urban_environment",
+    "road_quality_dtc",
+    "accessible_environment",
+    "public_spaces",
+    "road_quality_transit",
+    "parking_safety",
+}
+SCENARIO_DIR = PROJECT_ROOT / "runtime" / "scenarios"
 
 
 def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -33,6 +32,7 @@ def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"В сценарии отсутствуют поля: {sorted(missing)}")
     if int(payload.get("version", 1)) != 1:
         raise ValueError("Поддерживается только версия сценария 1")
+
     scenario_id = str(payload["id"]).strip().lower()
     if not SCENARIO_ID.fullmatch(scenario_id):
         raise ValueError("id должен состоять из латинских букв, цифр, '_' или '-'")
@@ -48,6 +48,7 @@ def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
     horizon = int(payload["horizon"])
     if not 1 <= horizon <= 20:
         raise ValueError("Горизонт должен составлять от 1 до 20 кварталов")
+
     raw_impulses = payload["impulses"]
     if not isinstance(raw_impulses, Mapping) or len(raw_impulses) > len(ADJUSTABLE_NODES):
         raise ValueError("impulses должен быть словарём разрешённых узлов")
@@ -60,6 +61,15 @@ def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Воздействие на {node} должно быть в диапазоне [-1, 1]")
         if abs(numeric) > 1e-12:
             impulses[node] = numeric
+    raw_index_values = payload.get("index_values", {})
+    if not isinstance(raw_index_values, Mapping):
+        raise ValueError("index_values должен быть словарём шести индексов")
+    unknown_indexes = set(raw_index_values) - INDEX_CONTROL_IDS
+    if unknown_indexes:
+        raise ValueError(f"Неизвестные управляемые индексы: {sorted(unknown_indexes)}")
+    index_values = {str(index_id): float(value) for index_id, value in raw_index_values.items()}
+    if any(not 0.0 <= value <= 100.0 for value in index_values.values()):
+        raise ValueError("Значения управляемых индексов должны быть в диапазоне [0, 100]")
     return {
         "version": 1,
         "id": scenario_id,
@@ -68,13 +78,14 @@ def validate_scenario(payload: Mapping[str, Any]) -> dict[str, Any]:
         "mode": mode,
         "horizon": horizon,
         "impulses": impulses,
+        "index_values": index_values,
         "builtin": False,
     }
 
 
 def builtin_items() -> list[dict[str, Any]]:
     return [
-        {"id": scenario_id, **scenario, "builtin": True, "database_id": None}
+        {"id": scenario_id, **scenario, "index_values": {}, "builtin": True}
         for scenario_id, scenario in BUILTIN_SCENARIOS.items()
     ]
 
@@ -83,198 +94,47 @@ def get_builtin(scenario_id: str) -> dict[str, Any] | None:
     scenario = BUILTIN_SCENARIOS.get(scenario_id)
     if scenario is None:
         return None
-    return {"id": scenario_id, **scenario, "builtin": True, "database_id": None}
-
-
-def scenario_to_dict(scenario: Scenario, *, include_owner: bool = False) -> dict[str, Any]:
-    output: dict[str, Any] = {
-        "version": scenario.schema_version,
-        "id": scenario.slug,
-        "database_id": str(scenario.id),
-        "label": scenario.label,
-        "description": scenario.description,
-        "mode": scenario.mode,
-        "horizon": scenario.horizon,
-        "impulses": dict(scenario.impulses or {}),
-        "builtin": False,
-    }
-    if include_owner:
-        output["owner"] = {
-            "id": str(scenario.owner.id),
-            "username": scenario.owner.username,
-            "display_name": scenario.owner.display_name,
-        }
-    return output
+    return {"id": scenario_id, **scenario, "index_values": {}, "builtin": True}
 
 
 def export_payload(scenario: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: scenario[key]
-        for key in ("version", "id", "label", "description", "mode", "horizon", "impulses")
+        for key in ("version", "id", "label", "description", "mode", "horizon", "impulses", "index_values")
     }
 
 
 class ScenarioStore:
-    def __init__(self, session: Session):
-        self.session = session
+    """JSON-сценарии в отслеживаемой Git папке runtime/scenarios."""
 
-    def list(self, user: User) -> list[dict[str, Any]]:
-        query = (
-            select(Scenario)
-            .options(joinedload(Scenario.owner))
-            .order_by(Scenario.updated_at.desc(), Scenario.slug)
-        )
-        if user.role == "observer":
-            query = query.join(ScenarioShare).where(ScenarioShare.observer_id == user.id)
-        elif user.role != "admin":
-            query = query.where(Scenario.owner_id == user.id)
-        records = self.session.scalars(query).all()
-        return builtin_items() + [
-            scenario_to_dict(record, include_owner=user.role in {"admin", "observer"})
-            for record in records
-        ]
+    def __init__(self, directory: Path | str = SCENARIO_DIR):
+        self.directory = Path(directory).resolve()
+        self.directory.mkdir(parents=True, exist_ok=True)
 
-    def _get_record(self, reference: str, user: User) -> Scenario:
-        try:
-            scenario_uuid = uuid.UUID(str(reference))
-        except ValueError:
-            scenario_uuid = None
+    def _path(self, scenario_id: str) -> Path:
+        if not SCENARIO_ID.fullmatch(scenario_id):
+            raise ValueError("Некорректный id сценария")
+        return self.directory / f"{scenario_id}.json"
 
-        query = select(Scenario)
-        if scenario_uuid is not None:
-            query = query.where(Scenario.id == scenario_uuid)
-        else:
-            query = query.where(Scenario.slug == str(reference).lower())
-        if user.role == "observer":
-            query = query.join(ScenarioShare).where(ScenarioShare.observer_id == user.id)
-        elif user.role != "admin":
-            query = query.where(Scenario.owner_id == user.id)
+    def get(self, scenario_id: str) -> dict[str, Any] | None:
+        path = self._path(scenario_id)
+        if not path.is_file():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return validate_scenario(payload)
 
-        records = self.session.scalars(query.limit(2)).all()
-        if not records:
-            raise ScenarioNotFoundError("Сценарий не найден")
-        if len(records) > 1:
-            raise ScenarioConflictError("Сценарий неоднозначен; используйте database_id")
-        return records[0]
+    def items(self) -> list[dict[str, Any]]:
+        return [self.get(path.stem) for path in sorted(self.directory.glob("*.json"))]
 
-    def get(self, reference: str, user: User) -> dict[str, Any]:
-        builtin = get_builtin(reference)
-        if builtin is not None:
-            return builtin
-        return scenario_to_dict(
-            self._get_record(reference, user),
-            include_owner=user.role in {"admin", "observer"},
-        )
-
-    def sharing(self, reference: str, user: User) -> dict[str, Any]:
-        if get_builtin(reference) is not None:
-            raise ScenarioConflictError("Встроенный сценарий доступен всем и не требует выдачи доступа")
-        if user.role not in {"user", "admin"}:
-            raise ScenarioNotFoundError("Сценарий не найден")
-        record = self._get_record(reference, user)
-        selected_ids = set(
-            self.session.scalars(
-                select(ScenarioShare.observer_id).where(ScenarioShare.scenario_id == record.id)
-            ).all()
-        )
-        observers = self.session.scalars(
-            select(User)
-            .where(User.role == "observer", User.is_active.is_(True))
-            .order_by(User.display_name, User.username)
-        ).all()
-        return {
-            "scenario": scenario_to_dict(record, include_owner=True),
-            "observers": [
-                {
-                    "id": str(observer.id),
-                    "username": observer.username,
-                    "display_name": observer.display_name,
-                    "selected": observer.id in selected_ids,
-                }
-                for observer in observers
-            ],
-        }
-
-    def set_sharing(
-        self,
-        reference: str,
-        user: User,
-        observer_ids: list[uuid.UUID],
-    ) -> dict[str, Any]:
-        if get_builtin(reference) is not None:
-            raise ScenarioConflictError("Встроенный сценарий доступен всем и не требует выдачи доступа")
-        if user.role not in {"user", "admin"}:
-            raise ScenarioNotFoundError("Сценарий не найден")
-        record = self._get_record(reference, user)
-        unique_ids = set(observer_ids)
-        observers = self.session.scalars(
-            select(User).where(
-                User.id.in_(unique_ids),
-                User.role == "observer",
-                User.is_active.is_(True),
-            )
-        ).all() if unique_ids else []
-        if {observer.id for observer in observers} != unique_ids:
-            raise ValueError("Доступ можно выдать только активным пользователям с ролью наблюдателя")
-
-        self.session.execute(delete(ScenarioShare).where(ScenarioShare.scenario_id == record.id))
-        self.session.add_all(
-            ScenarioShare(scenario_id=record.id, observer_id=observer.id)
-            for observer in observers
-        )
-        self.session.commit()
-        return self.sharing(reference, user)
-
-    def save(self, payload: Mapping[str, Any], owner: User) -> dict[str, Any]:
+    def save(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         scenario = validate_scenario(payload)
-        if scenario["id"] in BUILTIN_SCENARIOS:
-            raise ScenarioConflictError("Встроенный сценарий нельзя перезаписать")
-        record = Scenario(
-            owner_id=owner.id,
-            slug=scenario["id"],
-            label=scenario["label"],
-            description=scenario["description"],
-            mode=scenario["mode"],
-            horizon=scenario["horizon"],
-            impulses=scenario["impulses"],
-            schema_version=scenario["version"],
-        )
-        self.session.add(record)
+        path = self._path(scenario["id"])
+        descriptor, temp_name = tempfile.mkstemp(prefix=f".{scenario['id']}-", suffix=".json", dir=self.directory)
         try:
-            self.session.commit()
-        except IntegrityError as error:
-            self.session.rollback()
-            raise ScenarioConflictError("Сценарий с таким id уже существует у пользователя") from error
-        self.session.refresh(record)
-        return scenario_to_dict(record, include_owner=owner.role == "admin")
-
-    def update(self, reference: str, payload: Mapping[str, Any], user: User) -> dict[str, Any]:
-        if get_builtin(reference) is not None:
-            raise ScenarioConflictError("Встроенный сценарий нельзя изменить")
-        record = self._get_record(reference, user)
-        scenario = validate_scenario(payload)
-        if scenario["id"] in BUILTIN_SCENARIOS:
-            raise ScenarioConflictError("Нельзя использовать id встроенного сценария")
-        record.slug = scenario["id"]
-        record.label = scenario["label"]
-        record.description = scenario["description"]
-        record.mode = scenario["mode"]
-        record.horizon = scenario["horizon"]
-        record.impulses = scenario["impulses"]
-        record.schema_version = scenario["version"]
-        try:
-            self.session.commit()
-        except IntegrityError as error:
-            self.session.rollback()
-            raise ScenarioConflictError("Сценарий с таким id уже существует у пользователя") from error
-        self.session.refresh(record)
-        return scenario_to_dict(record, include_owner=user.role == "admin")
-
-    def delete(self, reference: str, user: User) -> dict[str, Any]:
-        if get_builtin(reference) is not None:
-            raise ScenarioConflictError("Встроенный сценарий нельзя удалить")
-        record = self._get_record(reference, user)
-        result = scenario_to_dict(record, include_owner=user.role == "admin")
-        self.session.delete(record)
-        self.session.commit()
-        return result
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+                json.dump(export_payload(scenario), stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            Path(temp_name).replace(path)
+        finally:
+            Path(temp_name).unlink(missing_ok=True)
+        return scenario
