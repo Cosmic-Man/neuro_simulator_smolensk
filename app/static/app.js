@@ -934,7 +934,9 @@ function applySelectedScenario() {
   if (![...horizon.options].some(option => Number(option.value) === Number(scenario.horizon))) {
     const option = document.createElement("option"); option.value = scenario.horizon; option.textContent = `${scenario.horizon} кварталов`; horizon.appendChild(option);
   }
-  horizon.value = scenario.horizon;
+  // Инерционный прогноз открывается на ближайший квартал; более длинный
+  // горизонт пользователь выбирает явно в том же контроле.
+  horizon.value = scenario.id === "inertial" ? "1" : scenario.horizon;
   state.baseImpulses = { ...scenario.impulses };
   document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     input.value = state.baseImpulses[input.dataset.node] || 0;
