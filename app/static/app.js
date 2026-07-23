@@ -948,7 +948,7 @@ function renderImprovementRecommendations(score = null) {
   const interpretation = interpretQualityIndex(Number(score ?? objective.current));
   const status = document.getElementById("recommendationStatus");
   status.className = "recommendation-status neutral";
-  status.innerHTML = `<strong>${interpretation.category}</strong><span>${interpretation.description}</span><span>${interpretation.action}</span>`;
+  status.innerHTML = `<strong>${interpretation.category} -</strong><span>${interpretation.description} ${interpretation.action}</span>`;
   document.getElementById("recommendationList").innerHTML = "";
   document.getElementById("recommendationMethodology").textContent = "";
 }
