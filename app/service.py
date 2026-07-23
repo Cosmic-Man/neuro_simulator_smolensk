@@ -88,8 +88,8 @@ MODEL_CATALOG = {
     "anfis": {
         "role": "Основная модель Pipeline",
         "how": "Объединяет восемь гауссовых правил Сугено и линейные выводы правил; параметры обучаются Adam.",
-        "inputs": "Шесть индексов Pipeline квартала t после объединения показателей ДТК и ГОТ и RobustScaler; целевая переменная — итоговый индекс квартала t+1.",
-        "purpose": "Прогнозирует следующий квартал без использования его показателей и сравнивается с двумя временными baseline.",
+        "inputs": "Шесть индексов Pipeline того же квартала после объединения показателей ДТК и ГОТ и RobustScaler; целевая переменная — итоговый индекс этого квартала.",
+        "purpose": "Оценивает итоговый индекс по шести входам и сравнивается с двумя baseline из Pipeline (2).ipynb.",
     },
 }
 
@@ -397,69 +397,68 @@ class ProblemBService:
     def _build_pipeline_evaluation(self) -> dict[str, Any]:
         feature_names = [
             "urban_environment",
-            "road_quality_dtc",
             "accessible_environment",
             "public_spaces",
-            "road_quality_transit",
             "parking_safety",
+            "road_quality_dtc",
+            "road_quality_transit",
         ]
         all_periods = self.bundle.fuzzy_indices.index.to_numpy(dtype=str)
         fuzzy = self.bundle.fuzzy_indices
         pipeline_inputs = pd.DataFrame(
             {
                 "urban_environment": fuzzy["urban_environment"],
+                "accessible_environment": fuzzy["accessible_environment"],
+                "public_spaces": fuzzy["public_spaces"],
+                "parking_safety": fuzzy["parking_safety"],
                 "road_quality_dtc": (
                     0.7 * fuzzy["road_wellbeing_dtc"] + 0.6 * fuzzy["road_quality_dtc"]
                 ) / 100.0,
-                "accessible_environment": fuzzy["accessible_environment"],
-                "public_spaces": fuzzy["public_spaces"],
                 "road_quality_transit": (
                     0.9 * fuzzy["road_wellbeing_transit"] + 0.7 * fuzzy["road_quality_transit"]
                 ) / 100.0,
-                "parking_safety": fuzzy["parking_safety"],
             },
             index=fuzzy.index,
         )
         self.pipeline_display_inputs = pd.DataFrame(
             {
                 "urban_environment": fuzzy["urban_environment"],
+                "accessible_environment": fuzzy["accessible_environment"],
+                "public_spaces": fuzzy["public_spaces"],
+                "parking_safety": fuzzy["parking_safety"],
                 "road_quality_dtc": (
                     0.7 * fuzzy["road_wellbeing_dtc"] + 0.6 * fuzzy["road_quality_dtc"]
                 ) / 1.3,
-                "accessible_environment": fuzzy["accessible_environment"],
-                "public_spaces": fuzzy["public_spaces"],
                 "road_quality_transit": (
                     0.9 * fuzzy["road_wellbeing_transit"] + 0.7 * fuzzy["road_quality_transit"]
                 ) / 1.6,
-                "parking_safety": fuzzy["parking_safety"],
             },
             index=fuzzy.index,
         )
         all_x_raw = pipeline_inputs.loc[:, feature_names].to_numpy(dtype=float)
         all_y_raw = self.bundle.raw["pipeline_target"].to_numpy(dtype=float)
 
-        # Прогноз на один квартал: JSON-индексы периода t предсказывают target t+1.
-        # Маски относятся к периоду цели, поэтому будущие строки не входят в train.
-        input_periods = all_periods[:-1]
-        periods = all_periods[1:]
-        x_raw = all_x_raw[:-1]
-        y_raw = all_y_raw[1:]
-        previous_raw = all_y_raw[:-1]
+        # Точная схема Pipeline (2).ipynb: признаки и target относятся к одному
+        # кварталу. Здесь нет искусственного сдвига t -> t+1.
+        input_periods = all_periods
+        periods = all_periods
+        x_raw = all_x_raw
+        y_raw = all_y_raw
+        previous_raw = np.full(len(all_y_raw), np.nan, dtype=float)
+        previous_raw[1:] = all_y_raw[:-1]
         train_mask = periods <= TRAIN_END
         validation_mask = (periods >= "2019Q1") & (periods <= VALIDATION_END)
 
-        self.pipeline_x_scaler = RobustScaler().fit(x_raw[train_mask])
-        self.pipeline_y_scaler = RobustScaler().fit(y_raw[train_mask, None])
-        x_scaled = self.pipeline_x_scaler.transform(x_raw)
+        self.pipeline_anfis = PipelineANFIS(feature_names)
+        self.pipeline_x_scaler = self.pipeline_anfis.x_scaler
+        self.pipeline_y_scaler = self.pipeline_anfis.y_scaler
         y_scaled = self.pipeline_y_scaler.transform(y_raw[:, None]).reshape(-1)
         previous_scaled = self.pipeline_y_scaler.transform(previous_raw[:, None]).reshape(-1)
-        self.pipeline_anfis = PipelineANFIS(feature_names).fit(
-            x_scaled[train_mask],
-            y_scaled[train_mask],
-            x_scaled[validation_mask],
-            y_scaled[validation_mask],
+        anfis_prediction_raw = self.pipeline_anfis.predict(x_raw)
+        anfis_prediction = self.pipeline_y_scaler.transform(anfis_prediction_raw[:, None]).reshape(-1)
+        self.pipeline_anfis.validation_rmse_ = float(
+            np.sqrt(np.mean((anfis_prediction[validation_mask] - y_scaled[validation_mask]) ** 2))
         )
-        anfis_prediction = self.pipeline_anfis.predict(x_scaled)
 
         # Baseline используют только значения target, известные до целевого квартала.
         all_y_scaled = self.pipeline_y_scaler.transform(all_y_raw[:, None]).reshape(-1)
@@ -493,7 +492,7 @@ class ProblemBService:
         for split in ("validation", "test"):
             mask = split_mask(periods, split)
             selected = np.flatnonzero(mask)
-            target_indexes = selected + 1
+            target_indexes = selected
             seasonal_values = all_y_scaled[target_indexes - 4]
             predictions_by_model = {
                 "seasonal_naive": np.asarray(seasonal_values),
@@ -552,9 +551,9 @@ class ProblemBService:
                 for model_id, label in MODEL_LABELS.items()
             ],
             "note": (
-                "Прогноз без утечки: шесть индексов Pipeline квартала t предсказывают target квартала t+1. "
+                "Схема Pipeline (2).ipynb: шесть индексов квартала оценивают target того же квартала. "
                 "Train заканчивается целью 2018Q4, validation — 2019–2022, test — 2023–2025. "
-                "RobustScaler обучается только на train; test не используется при обучении и настройке ANFIS."
+                "Признаки и target относятся к одному кварталу, как в Pipeline (2).ipynb; RobustScaler обучается только на train, test не используется при обучении и настройке ANFIS."
             ),
         }
 
@@ -564,7 +563,7 @@ class ProblemBService:
         *,
         horizon: int = DEFAULT_HORIZON,
     ) -> dict[str, Any]:
-        """Прогнозирует итоговый индекс t+1 по шести входам Pipeline."""
+        """Оценивает итоговый индекс по шести входам Pipeline из того же квартала."""
         horizon = int(horizon)
         if not 1 <= horizon <= 20:
             raise ValueError("Горизонт должен составлять от 1 до 20 кварталов")
@@ -591,17 +590,15 @@ class ProblemBService:
         def model_row(values: Mapping[str, float]) -> np.ndarray:
             return np.asarray([[
                 values["urban_environment"],
-                values["road_quality_dtc"] * 1.3 / 100.0,
                 values["accessible_environment"],
                 values["public_spaces"],
-                values["road_quality_transit"] * 1.6 / 100.0,
                 values["parking_safety"],
+                values["road_quality_dtc"] * 1.3 / 100.0,
+                values["road_quality_transit"] * 1.6 / 100.0,
             ]], dtype=float)
 
         def predict(values: Mapping[str, float]) -> float:
-            scaled = self.pipeline_x_scaler.transform(model_row(values))
-            predicted_scaled = self.pipeline_anfis.predict(scaled).reshape(-1, 1)
-            predicted = float(self.pipeline_y_scaler.inverse_transform(predicted_scaled)[0, 0])
+            predicted = float(self.pipeline_anfis.predict(model_row(values))[0])
             return float(np.clip(predicted, 0.0, 100.0))
 
         baseline_prediction = predict(baseline)
@@ -716,7 +713,7 @@ class ProblemBService:
                 "sigma": float(np.mean(self.pipeline_anfis.sigmas_)),
                 "epochs": self.pipeline_anfis.trained_epochs_,
                 "validation_rmse": self.pipeline_anfis.validation_rmse_,
-                "source": "trained_from_pipeline",
+                "source": "loaded_from_runtime_models",
             }
         ]
         return {

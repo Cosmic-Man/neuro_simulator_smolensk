@@ -477,7 +477,7 @@ function collectArchiveLayoutGroup() {
   return {
     id: "archive-sections",
     label: `Разделы ${archiveSectionRange()}`,
-    description: "Аналитика, графики notebook и уникальные интерфейсы всей истории Git",
+    description: "Аналитика, графики notebook и уникальные интерфейсы",
     container,
     items,
     kind: "archive",
@@ -1096,6 +1096,8 @@ function syncLegacyScenarioWorkbench() {
     if (value) value.textContent = formatNumber(Number(input.value), 1);
   });
   const horizon = Number(document.getElementById("scenarioHorizon").value);
+  const plotHorizon = document.getElementById("scenarioPlotHorizon");
+  if (plotHorizon) plotHorizon.value = String(horizon);
   const horizonWord = horizon % 10 === 1 && horizon % 100 !== 11
     ? "квартал"
     : (horizon % 10 >= 2 && horizon % 10 <= 4 && (horizon % 100 < 12 || horizon % 100 > 14) ? "квартала" : "кварталов");
@@ -1469,13 +1471,17 @@ function renderAnalysis() {
 function renderDatasetCatalog() {
   const select = document.getElementById("datasetSelect");
   const defaultDataset = "smolensk_dataset_shared.xlsx";
+  const available = state.datasets.datasets.filter(item => item.readable !== false);
   const remembered = window.localStorage.getItem("smolensk.activeDataset");
-  const selected = state.datasets.datasets.some(item => item.name === remembered)
+  const selected = available.some(item => item.name === remembered)
     ? remembered
-    : (state.datasets.datasets.some(item => item.name === defaultDataset) ? defaultDataset : (select.value || state.datasets.active));
-  select.innerHTML = state.datasets.datasets.map(item =>
-    `<option value="${escapeHtml(item.name)}">${item.active ? "● " : ""}${escapeHtml(item.name)} · ${item.rows} строк</option>`).join("");
-  select.value = state.datasets.datasets.some(item => item.name === selected) ? selected : state.datasets.active;
+    : (available.some(item => item.name === defaultDataset) ? defaultDataset : (available[0]?.name || ""));
+  select.innerHTML = state.datasets.datasets.map(item => {
+    const unavailable = item.readable === false;
+    const suffix = unavailable ? " · недоступен" : ` · ${item.rows} строк`;
+    return `<option value="${escapeHtml(item.name)}" ${unavailable ? "disabled" : ""}>${item.active ? "● " : ""}${escapeHtml(item.name)}${suffix}</option>`;
+  }).join("");
+  select.value = available.some(item => item.name === selected) ? selected : (available[0]?.name || "");
   window.localStorage.setItem("smolensk.activeDataset", select.value);
 }
 
@@ -1660,7 +1666,7 @@ function renderEvaluation() {
   const catalog = Object.fromEntries(state.evaluation.model_catalog.map(model => [model.id, model]));
   document.getElementById("metricsBody").innerHTML = metrics.map(row => {
     const model = catalog[row.model];
-    return `<tr><td><strong>${escapeHtml(row.model_label)}</strong><small class="model-table-role">${escapeHtml(model.role)}</small></td><td>${formatNumber(row.mae, 3)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 3)}</td><td>${formatNumber(row.smape, 2)}%</td><td>${formatNumber(row.mase, 3)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`;
+    return `<tr><td><strong>${escapeHtml(row.model_label)}</strong><small class="model-table-role">${escapeHtml(model.role)}</small></td><td>${formatNumber(row.mae, 6)}</td><td class="${row.rmse === bestRmse ? "best-metric" : ""}">${formatNumber(row.rmse, 6)}</td><td>${formatNumber(row.smape, 3)}%</td><td>${formatNumber(row.mase, 6)}</td><td>${formatNumber(row.directional_accuracy * 100, 1)}%</td></tr>`;
   }).join("");
 }
 
@@ -2353,6 +2359,8 @@ function applySelectedScenario() {
   // Инерционный прогноз открывается на ближайший квартал; более длинный
   // горизонт пользователь выбирает явно в том же контроле.
   horizon.value = scenario.id === "inertial" ? "1" : scenario.horizon;
+  const plotHorizon = document.getElementById("scenarioPlotHorizon");
+  if (plotHorizon) plotHorizon.value = horizon.value;
   state.baseImpulses = { ...scenario.impulses };
   document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
     input.value = state.baseImpulses[input.dataset.node] || 0;
@@ -2640,10 +2648,22 @@ async function runScenario() {
 
 function renderSensitivity() {
   const targetId = document.getElementById("sensitivityTarget").value;
-  const items = state.evaluation.sensitivity[targetId].slice(0, 10).reverse();
+  const rawItems = state.evaluation.sensitivity[targetId]
+    .slice()
+    .sort((left, right) => Math.abs(right.delta_index_points) - Math.abs(left.delta_index_points));
+  const labelCounts = rawItems.reduce((counts, item) => {
+    counts[item.label] = (counts[item.label] || 0) + 1;
+    return counts;
+  }, {});
+  const items = rawItems.slice(0, 10).map(item => ({
+    ...item,
+    // Several different model nodes intentionally share a business label.
+    // Keep both sensitivities visible, but make their captions unambiguous.
+    displayLabel: labelCounts[item.label] > 1 ? `${item.label} (${item.node})` : item.label,
+  }));
   const maxEffect = Math.max(...items.map(item => Math.abs(item.delta_index_points)), 0.01);
   Plotly.react("sensitivityPlot", [{
-    x: items.map(item => item.delta_index_points), y: items.map(item => item.label), type: "bar", orientation: "h",
+    x: items.map(item => item.delta_index_points), y: items.map(item => item.displayLabel), type: "bar", orientation: "h",
     marker: { color: items.map(item => item.delta_index_points >= 0 ? colors.teal : colors.coral) },
     text: items.map(item => `${item.delta_index_points >= 0 ? "+" : ""}${item.delta_index_points.toFixed(3)}`),
     textposition: "outside", cliponaxis: false,
@@ -2659,7 +2679,7 @@ function renderSensitivity() {
       zeroline: true, zerolinecolor: colors.ink, zerolinewidth: 1,
     },
     yaxis: {
-      type: "category", categoryorder: "array", categoryarray: items.map(item => item.label),
+      type: "category", categoryorder: "array", categoryarray: items.map(item => item.displayLabel), autorange: "reversed",
       automargin: true, gridcolor: "rgba(0,0,0,0)", zeroline: false,
     },
   }, plotConfig);
@@ -2692,6 +2712,10 @@ function bindEvents() {
   });
   document.getElementById("scenarioMode").addEventListener("change", () => runScenario());
   document.getElementById("scenarioHorizon").addEventListener("change", () => runScenario());
+  document.getElementById("scenarioPlotHorizon")?.addEventListener("change", event => {
+    document.getElementById("scenarioHorizon").value = event.target.value;
+    runScenario();
+  });
   document.getElementById("resetSliders")?.addEventListener("click", resetSliders);
   document.getElementById("loadIndicesFromXlsx")?.addEventListener("click", () => loadIndicesFromXlsx().catch(error => showToast(error.message, true)));
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
@@ -2753,11 +2777,8 @@ async function initializeApplication() {
         window.requestAnimationFrame(() => hashTarget.scrollIntoView({ block: "start" }));
       }
     }
-    const remembered = window.localStorage.getItem("smolensk.activeDataset");
-    const initialDataset = state.datasets.datasets.some(item => item.name === remembered)
-      ? remembered
-      : (state.datasets.datasets.some(item => item.name === "smolensk_dataset_shared.xlsx") ? "smolensk_dataset_shared.xlsx" : state.datasets.active);
-    document.getElementById("datasetSelect").value = initialDataset;
+    const initialDataset = document.getElementById("datasetSelect").value;
+    if (!initialDataset) throw new Error("Нет доступного XLSX для расчёта");
     window.localStorage.setItem("smolensk.activeDataset", initialDataset);
     await loadDatasetDetail(initialDataset);
     // Дождаться первого layout-прохода браузера: Cytoscape иначе получает нулевой контейнер.

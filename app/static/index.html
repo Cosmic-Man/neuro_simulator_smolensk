@@ -143,8 +143,8 @@
       </div>
       <div class="model-technical-heading">
         <span class="panel-kicker">Техническая проверка ANFIS</span>
-        <h3>Одна модель, восемь входов и шесть правил</h3>
-        <p>Настройки перенесены из Pipeline.ipynb: RobustScaler, шесть гауссовых правил, Adam и ранняя остановка.</p>
+        <h3>Одна модель, шесть входов и восемь правил</h3>
+        <p>Настройки перенесены из Pipeline (2).ipynb: RobustScaler, восемь гауссовых правил, Adam и ранняя остановка.</p>
       </div>
       <div id="anfisCards" class="model-grid"></div>
     </section>
@@ -247,6 +247,22 @@
             <p id="recommendationMethodology" class="methodology-note"></p>
           </article>
         </div>
+      </div>
+    </section>
+
+    <section id="scenarioPlots" class="technical-notebook-section" hidden>
+      <div class="section-heading compact-heading">
+        <div><span class="section-index">04</span><h2>Графики сценарного прогноза</h2></div>
+        <label>Кварталы прогноза<select id="scenarioPlotHorizon" aria-label="Количество кварталов прогноза">
+          <option value="1">1 квартал</option><option value="2">2 квартала</option><option value="3">3 квартала</option><option value="4">4 квартала</option>
+          <option value="5">5 кварталов</option><option value="6">6 кварталов</option><option value="7">7 кварталов</option><option value="8">8 кварталов</option>
+        </select></label>
+      </div>
+      <div class="scenario-chart-grid">
+        <article class="panel mini-chart-panel"><span class="panel-kicker">Безопасность</span><div id="safetyPlot" class="plot"></div></article>
+        <article class="panel mini-chart-panel"><span class="panel-kicker">Регулярность</span><div id="regularityPlot" class="plot"></div></article>
+        <article class="panel mini-chart-panel"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
+        <article class="panel mini-chart-panel"><span class="panel-kicker">Итоговый индекс</span><div id="integratedPlot" class="plot"></div></article>
       </div>
     </section>
 
@@ -387,11 +403,11 @@
 
     <section id="technicalAppendix" class="section-block technical-appendix">
       <div class="section-heading">
-        <div><span class="section-index">05–22</span><h2>Архив графиков и интерфейсов</h2></div>
-        <p>Уникальные экраны из всей истории Git и визуализации notebook</p>
+        <div><span class="section-index">05–22</span><h2>Графики и интерфейсы</h2></div>
+        <p>Уникальные экраны и визуализации notebook</p>
       </div>
       <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="technicalAppendixContent">
-        <span><strong class="accordion-action">Развернуть разделы 05–22</strong><small>Текущая аналитика, история Git, полный набор графиков и музей интерфейсов</small></span><b aria-hidden="true">⌄</b>
+        <span><strong class="accordion-action">Развернуть разделы 05–22</strong><small>Текущая аналитика, полный набор графиков и музей интерфейсов</small></span><b aria-hidden="true">⌄</b>
       </button>
       <div id="technicalAppendixContent" class="accordion-content technical-stack" hidden>
         <section id="notebookCharts" class="technical-notebook-section">
@@ -418,27 +434,13 @@
             </article>
           </div>
         </section>
-        <section id="scenarioPlots" class="technical-notebook-section">
-          <div class="section-heading compact-heading">
-            <div><span class="section-index">11</span><h2>Графики сценарного прогноза</h2></div>
-            <p>Подробная траектория после расчёта лаборатории</p>
-          </div>
-          <div class="scenario-chart-grid">
-            <article class="panel mini-chart-panel"><span class="panel-kicker">Безопасность</span><div id="safetyPlot" class="plot"></div></article>
-            <article class="panel mini-chart-panel"><span class="panel-kicker">Регулярность</span><div id="regularityPlot" class="plot"></div></article>
-            <article class="panel mini-chart-panel"><span class="panel-kicker">Доступность</span><div id="accessibilityPlot" class="plot"></div></article>
-            <article class="panel mini-chart-panel"><span class="panel-kicker">Итоговый индекс</span><div id="integratedPlot" class="plot"></div></article>
-          </div>
-        </section>
         <section id="recoveredCharts" class="technical-notebook-section recovered-charts">
           <div class="section-heading compact-heading">
-            <div><span class="section-index">12</span><h2>Архив графиков Git и notebook</h2></div>
-            <p>Восстановлено по всей истории, включая версии с Docker и без Docker</p>
+            <div><span class="section-index">12</span><h2>Архив дополнительных графиков notebook</h2></div>
+            <p>Дополнительные графики и интерфейсы аналитического прототипа</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Docker: <code>ae7946d</code>, <code>0bff515</code>, <code>ee11608</code></span>
-            <span>Обычные коммиты: <code>5f8cc85</code>, <code>13934dd</code>, <code>161c533</code>, <code>b08e7c1</code>, <code>c029962</code></span>
-            <span>Notebook: <code>Pipeline (2).ipynb</code>, исторический <code>Pipeline.ipynb</code> и FuzzyConvolution</span>
+            <span>Источники: <code>Pipeline (2).ipynb</code>, <code>Pipeline.ipynb</code> и FuzzyConvolution</span>
           </div>
 
           <div class="recovered-accordion-list">
@@ -461,15 +463,15 @@
                   <div id="archiveIndexDistributionPlot" class="plot analysis-plot"></div>
                 </article>
                 <article class="panel chart-panel">
-                  <span class="panel-kicker">История Git</span><h3>Корреляционная матрица индексов</h3>
+                  <span class="panel-kicker">Дополнительная аналитика</span><h3>Корреляционная матрица индексов</h3>
                   <div id="archiveCorrelationPlot" class="plot analysis-plot"></div>
                 </article>
                 <article class="panel chart-panel">
-                  <span class="panel-kicker">История Git</span><h3>Связь индексов с target</h3>
+                  <span class="panel-kicker">Дополнительная аналитика</span><h3>Связь индексов с target</h3>
                   <div id="archiveFeatureImportancePlot" class="plot analysis-plot"></div>
                 </article>
                 <article class="panel chart-panel">
-                  <span class="panel-kicker">История Git</span><h3>Плотность распределения индексов</h3>
+                  <span class="panel-kicker">Дополнительная аналитика</span><h3>Плотность распределения индексов</h3>
                   <div id="archiveDensityPlot" class="plot analysis-plot"></div>
                 </article>
               </div>
@@ -496,11 +498,10 @@
         <section id="legacyHeroJourney" class="technical-notebook-section legacy-interface-section">
           <div class="section-heading compact-heading">
             <div><span class="section-index">13</span><h2>Первая витрина и маршрут заказчика</h2></div>
-            <p>Стартовый экран из ранних версий и четырёхшаговый путь из Docker-эпохи</p>
+            <p>Стартовый экран и четырёхшаговый путь заказчика</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Витрина: <code>5f8cc85</code>, <code>13934dd</code></span>
-            <span>Маршрут: <code>ee11608</code></span>
+            <span>Витрина и маршрут заказчика</span>
           </div>
           <div class="legacy-interface-stage legacy-hero-stage"
                data-layout-module-container
@@ -563,11 +564,10 @@
         <section id="legacyAuthProfile" class="technical-notebook-section legacy-interface-section">
           <div class="section-heading compact-heading">
             <div><span class="section-index">14</span><h2>Вход, профиль и управление сессией</h2></div>
-            <p>Интерфейс авторизации из Docker-версий; работает как безопасная локальная демонстрация</p>
+            <p>Интерфейс авторизации; работает как безопасная локальная демонстрация</p>
           </div>
           <div class="chart-source-ledger">
-            <span>PostgreSQL + роли: <code>ae7946d</code></span>
-            <span>Пользовательский поток: <code>ee11608</code></span>
+            <span>Авторизация, профиль и пользовательский поток</span>
           </div>
           <div class="legacy-auth-grid"
                data-layout-module-container
@@ -622,8 +622,7 @@
             <p>Переключатель воспроизводит три варианта одной страницы без обращения к старому API</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Роли: <code>ae7946d</code></span>
-            <span>Dashboard наблюдателя: <code>4724fa1</code></span>
+            <span>Ролевые режимы и dashboard наблюдателя</span>
           </div>
           <div class="legacy-role-switcher" role="group" aria-label="Архивный режим роли">
             <button class="mini-button active" type="button" data-legacy-role="observer" aria-pressed="true">Наблюдатель</button>
@@ -656,10 +655,10 @@
         <section id="legacyAdminPanel" class="technical-notebook-section legacy-interface-section">
           <div class="section-heading compact-heading">
             <div><span class="section-index">16</span><h2>Администрирование пользователей и аудит</h2></div>
-            <p>Локально интерактивная копия административного экрана Docker-версии</p>
+            <p>Локально интерактивная копия административного экрана</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Пользователи и журнал: <code>ae7946d</code>, <code>ee11608</code></span>
+            <span>Пользователи и журнал действий</span>
           </div>
           <div class="admin-grid"
                data-layout-module-container
@@ -727,8 +726,7 @@
             <p>Сохранение JSON, владелец, удаление и список наблюдателей</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Сценарии с владельцем: <code>ae7946d</code></span>
-            <span>Обратное перераспределение: <code>b08e7c1</code>, <code>b7ef265</code></span>
+            <span>Сценарии с владельцем и обратным перераспределением</span>
           </div>
           <div class="legacy-sharing-grid"
                data-layout-module-container
@@ -778,9 +776,7 @@
             <p>Возвращена компоновка с линейным и иерархическим индексами из ранней ветки</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Линейный baseline: <code>13934dd</code></span>
-            <span>Двойная карточка: <code>161c533</code></span>
-            <span>Иерархический-only: <code>d09e80a</code></span>
+            <span>Линейный baseline, двойная карточка и иерархический режим</span>
           </div>
           <div id="legacyExpertIndexCards" class="expert-index-grid"></div>
           <div class="legacy-contribution-grid"
@@ -814,9 +810,7 @@
             <p>Рабочее зеркало скрытых сейчас настроек: пресеты, модель, горизонт, JSON и все шесть индексов</p>
           </div>
           <div class="chart-source-ledger">
-            <span>17 пресетов и горизонты: <code>b08e7c1</code>, <code>b7ef265</code></span>
-            <span>JSON: <code>8a81461</code></span>
-            <span>Индексный режим: <code>1a22a0b</code>, <code>9c153ee</code></span>
+            <span>17 пресетов, горизонты и JSON-сценарии</span>
           </div>
           <div class="legacy-workbench-layout">
             <aside class="panel legacy-scenario-controls">
@@ -861,7 +855,7 @@
             <p>Пять управленческих мер и отдельный выбор цели из полного клиентского workflow</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Рекомендации заказчику: <code>ee11608</code></span>
+            <span>Рекомендации заказчику</span>
           </div>
           <article class="panel recommendations-panel legacy-recommendations-panel">
             <div class="panel-toolbar toolbar-wrap">
@@ -880,7 +874,7 @@
             <p>Живой результат сценария, возвращённый из полного клиентского workflow</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Бизнес-цели и бюджет: <code>ee11608</code></span>
+            <span>Бизнес-цели и бюджет</span>
           </div>
           <article id="budgetPanel" class="panel budget-panel">
             <div class="panel-toolbar">
@@ -908,7 +902,7 @@
             <p>Название, причинная интерпретация и фактически применённые импульсы</p>
           </div>
           <div class="chart-source-ledger">
-            <span>Объяснение результата: <code>5f8cc85</code> → <code>ee11608</code></span>
+            <span>Объяснение результата</span>
           </div>
           <article class="panel explanation-panel">
             <span class="panel-kicker">Объяснение результата</span>

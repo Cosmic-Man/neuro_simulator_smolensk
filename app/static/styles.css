@@ -607,7 +607,7 @@ body.layout-manager-open { overflow: hidden; }
 .layout-move-buttons button:disabled { opacity: .22; cursor: default; }
 .layout-manager-empty { margin: 0; padding: 24px 16px; color: var(--muted); text-align: center; font-size: 13px; }
 
-/* Архив уникальных интерфейсов из истории Git. */
+/* Архив уникальных интерфейсов. */
 .legacy-interface-section { min-width: 0; }
 .legacy-interface-stage {
   display: grid; gap: 18px; padding: 18px; border: 1px solid rgba(11,111,104,.14);

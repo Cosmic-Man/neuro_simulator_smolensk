@@ -88,30 +88,60 @@ class DatasetStore:
         path = self._resolve(name)
         workbook, sheet = self._sheet(path)
         try:
-            rows = max(sheet.max_row - 2, 0)
+            max_row = sheet.max_row or 0
+            max_column = sheet.max_column or 0
+            if max_row < 3 or max_column < 36:
+                return {
+                    "name": name,
+                    "rows": 0,
+                    "first_period": None,
+                    "last_period": None,
+                    "size_bytes": path.stat().st_size,
+                    "readable": False,
+                    "error": "Файл не готов к расчёту: пустой или неструктурированный лист «Лист1»",
+                }
+            rows = max(max_row - 2, 0)
             first_period = str(sheet.cell(3, 1).value) if rows else None
-            last_period = str(sheet.cell(sheet.max_row, 1).value) if rows else None
+            last_period = str(sheet.cell(max_row, 1).value) if rows else None
             return {
                 "name": name,
                 "rows": rows,
                 "first_period": first_period,
                 "last_period": last_period,
                 "size_bytes": path.stat().st_size,
+                "readable": True,
             }
         finally:
             workbook.close()
 
     def catalog(self, active_name: str) -> dict[str, object]:
+        datasets = []
+        for name in self.names():
+            try:
+                item = self.summary(name)
+            except Exception:
+                item = {
+                    "name": name,
+                    "rows": 0,
+                    "first_period": None,
+                    "last_period": None,
+                    "size_bytes": (self.directory / name).stat().st_size,
+                    "readable": False,
+                    "error": "Файл не готов к расчёту",
+                }
+            datasets.append(item | {"active": name == active_name})
         return {
             "directory": "datasets_ready",
             "active": active_name,
-            "datasets": [self.summary(name) | {"active": name == active_name} for name in self.names()],
+            "datasets": datasets,
         }
 
     def read(self, name: str) -> dict[str, object]:
         path = self._resolve(name)
         workbook, sheet = self._sheet(path)
         try:
+            if not sheet.max_row or not sheet.max_column or sheet.max_row < 3 or sheet.max_column < 36:
+                raise ValueError("Файл не готов к расчёту: пустой или неструктурированный лист «Лист1»")
             groups: list[str] = []
             current_group = ""
             for column in range(6, 37):
