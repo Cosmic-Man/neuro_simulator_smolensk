@@ -2353,6 +2353,9 @@ function applySelectedScenario() {
   document.getElementById("scenarioDescription").textContent = scenario.description;
   document.getElementById("scenarioMode").value = scenario.mode;
   const horizon = document.getElementById("scenarioHorizon");
+  if (![...horizon.options].some(option => Number(option.value) === Number(scenario.horizon))) {
+    const option = document.createElement("option"); option.value = scenario.horizon; option.textContent = `${scenario.horizon} кварталов`; horizon.appendChild(option);
+  }
   // Инерционный прогноз открывается на ближайший квартал; более длинный
   // горизонт пользователь выбирает явно в том же контроле.
   horizon.value = scenario.id === "inertial" ? "1" : scenario.horizon;
@@ -2488,6 +2491,86 @@ function signed(value, digits = 1) {
   return `${value > 0 ? "+" : ""}${formatNumber(value, digits)}`;
 }
 
+function scenarioMetric(label, baseline, scenario, deltaUnit) {
+  const delta = scenario - baseline;
+  return {
+    label,
+    baseline,
+    scenario,
+    delta_points: delta,
+    delta_unit: deltaUnit,
+    relative_change_percent: Math.abs(baseline) < 1e-12 ? null : delta / Math.abs(baseline) * 100,
+  };
+}
+
+function adaptAnfisScenarioResult(prediction, selectedScenario) {
+  const latest = state.history.latest;
+  const fixed = {
+    safety_index: Number(latest.traffic_safety),
+    accidents: Number(latest.accidents),
+    regularity: Number(latest.regularity),
+  };
+  const row = (step, period, accessibility) => ({
+    step,
+    period,
+    ...fixed,
+    accessibility,
+    integrated_mobility: accessibility,
+  });
+  const baseline = [
+    row(0, prediction.input_period, Number(prediction.baseline_prediction)),
+    ...prediction.forecast.map(item => row(item.step, item.period, Number(item.baseline))),
+  ];
+  const scenarioResult = [
+    row(0, prediction.input_period, Number(prediction.baseline_prediction)),
+    ...prediction.forecast.map(item => row(item.step, item.period, Number(item.scenario))),
+  ];
+  const finalBaseline = baseline.at(-1);
+  const finalScenario = scenarioResult.at(-1);
+  const changedInputs = prediction.inputs.flatMap(input => {
+    const before = Number(prediction.baseline_values[input.id]);
+    const after = Number(prediction.scenario_values[input.id]);
+    const delta = after - before;
+    return Math.abs(delta) < 1e-9 ? [] : [{ node: input.id, label: input.label, value: delta }];
+  });
+  return {
+    scenario: selectedScenario || { id: "anfis", label: "Прогноз ANFIS", description: "" },
+    mode: "anfis",
+    horizon: prediction.horizon,
+    baseline,
+    scenario_result: scenarioResult,
+    summary: {
+      safety: scenarioMetric("Безопасность движения", fixed.safety_index, fixed.safety_index, "индексных пунктов"),
+      regularity: scenarioMetric("Регулярность транспорта", fixed.regularity, fixed.regularity, "процентных пунктов"),
+      accessibility: scenarioMetric(
+        "Транспортная доступность",
+        finalBaseline.accessibility,
+        finalScenario.accessibility,
+        "индексных пунктов",
+      ),
+      integrated_mobility: scenarioMetric(
+        "Итоговый индекс мобильности",
+        finalBaseline.integrated_mobility,
+        finalScenario.integrated_mobility,
+        "индексных пунктов",
+      ),
+      accidents: {
+        label: "ДТП на 10 тыс. жителей",
+        baseline: fixed.accidents,
+        scenario: fixed.accidents,
+        delta: 0,
+        improvement_percent: null,
+      },
+    },
+    applied_impulses: changedInputs,
+    explanation: [
+      `Прогноз рассчитан моделью ${prediction.model} по шести индексам Pipeline.`,
+      `${prediction.level.label}: ${prediction.level.explanation}`,
+      ...prediction.recommendations.map(item => item.action),
+    ],
+  };
+}
+
 function renderBusinessSummary(result) {
   const metrics = [
     ["safety", "Безопасность движения", colors.coral],
@@ -2516,27 +2599,26 @@ function renderBusinessSummary(result) {
 }
 
 function interpretQualityIndex(score) {
-  if (score <= 20) return { category: "Катастрофическое", description: " Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
-  if (score <= 40) return { category: "Плохое", description: " Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
-  if (score <= 60) return { category: "Удовлетворительное", description: " Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
-  if (score <= 80) return { category: "Хорошее", description: " Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
-  if (score <= 95) return { category: "Отличное", description: " Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
-  return { category: "Превосходное", description: " Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
+  if (score <= 20) return { category: "Катастрофическое", description: "Критическое состояние инфраструктуры, высокая аварийность.", action: "Требуется немедленное вмешательство и аварийный ремонт." };
+  if (score <= 40) return { category: "Плохое", description: "Системные проблемы с транспортом и безопасностью движения.", action: "Необходима разработка целевой программы по улучшению показателей." };
+  if (score <= 60) return { category: "Удовлетворительное", description: "Базовые стандарты соблюдены, но комфорт среды низкий.", action: "Плановое техническое обслуживание и точечная модернизация." };
+  if (score <= 80) return { category: "Хорошее", description: "Комфортная и безопасная городская среда с минимальными сбоями.", action: "Внедрение превентивных мер и оптимизация процессов." };
+  if (score <= 95) return { category: "Отличное", description: "Высокий уровень благоустройства и удовлетворённости жителей.", action: "Поддержание стандартов и внедрение инновационных решений." };
+  return { category: "Превосходное", description: "Эталонное состояние городской среды, лучшие практики.", action: "Мониторинг для предотвращения деградации и масштабирование опыта." };
 }
 
 function renderImprovementRecommendations(score = null) {
   const data = state.improvementRecommendations;
-  if (!data) return;
+  if (!data && score == null) return;
   const objectiveId = document.getElementById("customerObjective").value;
-  const objective = data.objectives.find(item => item.id === objectiveId) || data.objectives[0];
-  const indicator = objective.indicator;
-  const interpretation = interpretQualityIndex(Number(score ?? objective.current));
+  const objective = data?.objectives.find(item => item.id === objectiveId) || data?.objectives[0];
+  const interpretation = interpretQualityIndex(Number(score ?? objective?.current));
   const status = document.getElementById("recommendationStatus");
   status.className = "recommendation-status neutral";
   status.innerHTML = `<strong>${interpretation.category} -</strong><span>${interpretation.description} ${interpretation.action}</span>`;
   document.getElementById("recommendationList").innerHTML = "";
   document.getElementById("recommendationMethodology").textContent = "";
-  renderLegacyRecommendations();
+  if (data) renderLegacyRecommendations();
 }
 
 function applyRecommendedMeasure(factor) {
@@ -2606,19 +2688,12 @@ async function runScenario() {
   const button = document.getElementById("runScenario");
   button.disabled = true; button.textContent = "Расчёт…";
   const selected = scenarioByReference(document.getElementById("scenarioPreset").value);
-  const impulses = {};
-  if (selected?.builtin) document.querySelectorAll("#scenarioSliders input[data-node]").forEach(input => {
-    const delta = Number(input.value) - Number(state.baseImpulses[input.dataset.node] || 0);
-    if (Math.abs(delta) > .0001) impulses[input.dataset.node] = delta;
-  });
   try {
-    const result = await api("/api/simulate", { method: "POST", body: JSON.stringify({
-      scenario: document.getElementById("scenarioPreset").value,
-      scenario_payload: selected?.builtin ? null : scenarioPayloadFromControls(selected),
-      mode: document.getElementById("scenarioMode").value,
-      horizon: Number(document.getElementById("scenarioHorizon").value), impulses,
+    const prediction = await api("/api/anfis/scenario", { method: "POST", body: JSON.stringify({
       index_values: indexValuesFromControls(),
+      horizon: Number(document.getElementById("scenarioHorizon").value),
     }) });
+    const result = adaptAnfisScenarioResult(prediction, selected);
     await Promise.all([
       plotScenario("safetyPlot", result.baseline, result.scenario_result, "safety_index", "баллы", "accidents"),
       plotScenario("regularityPlot", result.baseline, result.scenario_result, "regularity", "%"),
@@ -2626,9 +2701,6 @@ async function runScenario() {
       plotScenario("integratedPlot", result.baseline, result.scenario_result, "integrated_mobility", "баллы"),
     ]);
     renderBusinessSummary(result);
-    state.budgetAnalysis = result.budget_analysis;
-    state.improvementRecommendations = result.improvement_recommendations;
-    renderBudgetAnalysis();
     renderImprovementRecommendations(result.summary.integrated_mobility.scenario);
     document.getElementById("scenarioResultTitle").textContent = result.scenario.label;
     document.getElementById("scenarioExplanation").innerHTML = result.explanation.map(item => `<li>${item}</li>`).join("");

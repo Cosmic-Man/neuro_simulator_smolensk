@@ -140,6 +140,9 @@ class ModelTests(unittest.TestCase):
         values["urban_environment"] = max(0.0, values["urban_environment"] - 10.0)
         changed = self.service.simulate_pipeline_index(values)
         self.assertNotEqual(changed["scenario_prediction"], changed["baseline_prediction"])
+        zero_values = {index_id: 0.0 for index_id in baseline["baseline_values"]}
+        zero_prediction = self.service.simulate_pipeline_index(zero_values, horizon=1)
+        self.assertEqual(zero_prediction["scenario_prediction"], 0.0)
 
     def test_scenario_directions_are_plausible(self) -> None:
         safety = self.service.simulate("inertial", custom_impulses={"safety_budget_execution": 1.0})
