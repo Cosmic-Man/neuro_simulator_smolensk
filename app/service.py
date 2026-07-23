@@ -963,6 +963,45 @@ class ProblemBService:
             "integrated_mobility": round(integrated, 4),
         }
 
+    def _fcm_simulation_trace(
+        self,
+        baseline_states: np.ndarray,
+        scenario_states: np.ndarray,
+    ) -> dict[str, Any]:
+        """Возвращает полную динамику узлов для визуализации сценария на графе FCM."""
+
+        steps: list[dict[str, Any]] = []
+        max_abs_delta = 0.0
+        for step, (baseline_state, scenario_state) in enumerate(
+            zip(baseline_states, scenario_states, strict=True)
+        ):
+            nodes: dict[str, dict[str, float]] = {}
+            for position, node_id in enumerate(NODE_IDS):
+                baseline_value = float(baseline_state[position] * 100.0)
+                scenario_value = float(scenario_state[position] * 100.0)
+                delta = scenario_value - baseline_value
+                max_abs_delta = max(max_abs_delta, abs(delta))
+                nodes[node_id] = {
+                    "baseline": round(baseline_value, 4),
+                    "scenario": round(scenario_value, 4),
+                    "delta": round(delta, 4),
+                }
+            steps.append(
+                {
+                    "step": step,
+                    "period": str(
+                        self.bundle.raw.index[-1]
+                        if step == 0
+                        else next_period(str(self.bundle.raw.index[-1]), step)
+                    ),
+                    "nodes": nodes,
+                }
+            )
+        return {
+            "steps": steps,
+            "max_abs_delta": round(max_abs_delta, 4),
+        }
+
     def _target_state_value(self, target_id: str, state: np.ndarray) -> float:
         if target_id == "integrated_mobility":
             return float(np.mean([state[NODE_IDS.index(name)] for name in ("traffic_safety", "transport_regularity", "transport_accessibility")]))
@@ -1250,6 +1289,7 @@ class ProblemBService:
             "mode": selected_mode,
             "horizon": selected_horizon,
             "applied_impulses": [{"node": node, "label": label_by_id[node], "value": round(value, 4)} for node, value in impulses.items()],
+            "fcm_simulation": self._fcm_simulation_trace(baseline_states, scenario_states),
             "baseline": baseline_rows,
             "scenario_result": scenario_rows,
             "explanation": explanations,
