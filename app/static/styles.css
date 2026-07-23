@@ -80,7 +80,10 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios .scenario-results > *:not(.business-summary),
 #scenarios .business-summary-heading,
 #scenarios #businessKpis .business-kpi:not(:last-child) { display: none; }
-#scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
+#scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 330px; align-items: stretch; }
+#scenarios .scenario-results { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-content: stretch; max-height: none; overflow: visible; padding-right: 0; background: transparent; }
+#scenarios .scenario-results > .business-summary,
+#scenarios .scenario-results > .recommendations-panel { height: 100%; box-sizing: border-box; margin: 0; }
 #scenarios .scenario-controls { position: static; }
 #scenarios .slider-list { max-height: none; overflow: visible; }
 #scenarios .index-actions { display: flex; gap: 8px; margin: 8px 0; }
@@ -452,6 +455,7 @@ input[type="range"] { width: 92%; accent-color: var(--teal); }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .source-grid, .map-layout, .scenario-layout, .problem-focus { grid-template-columns: 1fr; }
   .scenario-controls, .scenario-results { position: static; max-height: none; overflow: visible; padding-right: 0; }
+  #scenarios .scenario-results { display: block; }
   .model-grid { grid-template-columns: 1fr; }
   .index-grid { grid-template-columns: repeat(2, 1fr); }
   .business-kpi-grid { grid-template-columns: repeat(2, 1fr); }
