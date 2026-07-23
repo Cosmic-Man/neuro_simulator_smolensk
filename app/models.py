@@ -78,14 +78,14 @@ class RidgeRegressor:
         return design @ self.coef_
 
 
-ANFIS_ARTIFACT_VERSION = 1
+ANFIS_ARTIFACT_VERSION = 2
 
 
 class ModelArtifactError(ValueError):
     """Артефакт модели отсутствует, повреждён или не соответствует данным."""
 
 
-class ANFIS:
+class LegacyANFIS:
     """
     Компактная модель Сугено: две гауссовы функции принадлежности на вход,
     до 16 правил и линейные консеквенты, обучаемые Ridge-методом.
@@ -351,6 +351,360 @@ class ANFIS:
             lower_raw = lower * (self.x_max_ - self.x_min_) + self.x_min_
             upper_raw = upper * (self.x_max_ - self.x_min_) + self.x_min_
             effects[name] = float(np.mean(self.predict(upper_raw) - self.predict(lower_raw)) / (2 * delta))
+        return effects
+
+
+def _kmeans_plus_plus(array: np.ndarray, clusters: int, rng: np.random.RandomState) -> np.ndarray:
+    """NumPy-реализация инициализации KMeans из baseline notebook."""
+    centers = [array[rng.randint(len(array))].copy()]
+    for _ in range(1, clusters):
+        squared = np.min(
+            np.sum((array[:, None, :] - np.asarray(centers)[None, :, :]) ** 2, axis=2),
+            axis=1,
+        )
+        total = float(squared.sum())
+        index = int(rng.randint(len(array))) if total <= 1e-12 else int(rng.choice(len(array), p=squared / total))
+        centers.append(array[index].copy())
+    return np.asarray(centers, dtype=float)
+
+
+def _kmeans(array: np.ndarray, clusters: int, random_state: int = 42) -> np.ndarray:
+    """KMeans с десятью запусками, как ``KMeans(..., n_init=10)`` в notebook."""
+    if len(array) < clusters:
+        raise ValueError("Для инициализации ANFIS недостаточно строк")
+    best: tuple[float, np.ndarray] | None = None
+    for run in range(10):
+        rng = np.random.RandomState(random_state + run)
+        centers = _kmeans_plus_plus(array, clusters, rng)
+        for _ in range(300):
+            distances = np.sum((array[:, None, :] - centers[None, :, :]) ** 2, axis=2)
+            labels = np.argmin(distances, axis=1)
+            updated = centers.copy()
+            for cluster in range(clusters):
+                members = array[labels == cluster]
+                if len(members):
+                    updated[cluster] = members.mean(axis=0)
+            if np.allclose(updated, centers, atol=1e-7):
+                centers = updated
+                break
+            centers = updated
+        inertia = float(np.min(np.sum((array[:, None, :] - centers[None, :, :]) ** 2, axis=2), axis=1).sum())
+        if best is None or inertia < best[0]:
+            best = (inertia, centers.copy())
+    assert best is not None
+    return best[1]
+
+
+class ANFIS:
+    """ANFIS baseline из ячеек 104–105 ``primer/Pipeline (2).ipynb``.
+
+    Модель повторяет notebook: KMeans-центры, по одной гауссовой функции
+    принадлежности на вход в каждом правиле, линейные консеквенты Sugeno и
+    обучение всех параметров Adam. Реализация остаётся на NumPy, поэтому
+    production-зависимости проекта не меняются.
+    """
+
+    def __init__(
+        self,
+        feature_names: Sequence[str] | None = None,
+        *,
+        n_rules: int = 6,
+        n_inputs: int | None = None,
+        epochs: int = 500,
+        learning_rate: float = 0.05,
+        patience: int = 70,
+        weight_decay: float = 1e-3,
+        random_state: int = 42,
+        # Совместимость с конструктором старой app-модели и service.py.
+        sigma_candidates: Iterable[float] | None = None,
+        ridge_candidates: Iterable[float] | None = None,
+    ) -> None:
+        if feature_names is None:
+            input_count = 6 if n_inputs is None else int(n_inputs)
+            feature_names = tuple(f"x_{index}" for index in range(input_count))
+        self.feature_names = list(feature_names)
+        if n_inputs is not None and int(n_inputs) != len(self.feature_names):
+            raise ValueError("Число входов ANFIS не совпадает с feature_names")
+        if not 1 <= len(self.feature_names) <= 6:
+            raise ValueError("ANFIS поддерживает от одного до шести входов")
+        if int(n_rules) < 1:
+            raise ValueError("Число правил ANFIS должно быть положительным")
+        self.n_rules = int(n_rules)
+        self.n_inputs = len(self.feature_names)
+        self.epochs = int(epochs)
+        self.learning_rate = float(learning_rate)
+        self.patience = int(patience)
+        self.weight_decay = float(weight_decay)
+        self.random_state = int(random_state)
+        self.sigma_candidates = tuple(float(value) for value in (sigma_candidates or ()))
+        self.ridge_candidates = tuple(float(value) for value in (ridge_candidates or ()))
+        self.centers_: np.ndarray | None = None
+        self.sigmas_: np.ndarray | None = None
+        self.consequents_: np.ndarray | None = None
+        self.validation_rmse_: float | None = None
+        self.trained_epochs_: int = 0
+        # Поля сохранены для совместимости с кодом старой модели.
+        self.sigma_: float | None = None
+        self.ridge_: float | None = None
+
+    @property
+    def centers(self) -> np.ndarray | None:
+        return self.centers_
+
+    @property
+    def sigmas(self) -> np.ndarray | None:
+        return self.sigmas_
+
+    @property
+    def consequents(self) -> np.ndarray | None:
+        return self.consequents_
+
+    @property
+    def rule_count(self) -> int:
+        return 0 if self.centers_ is None else int(len(self.centers_))
+
+    def training_signature(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_validation: np.ndarray,
+        y_validation: np.ndarray,
+        *,
+        context: str = "",
+    ) -> str:
+        digest = hashlib.sha256()
+        digest.update(f"anfis-artifact:{ANFIS_ARTIFACT_VERSION}\n".encode())
+        digest.update(context.encode("utf-8"))
+        digest.update("\0".join(self.feature_names).encode("utf-8"))
+        digest.update(repr((self.n_rules, self.n_inputs)).encode())
+        digest.update(repr((self.epochs, self.learning_rate, self.patience, self.weight_decay, self.random_state)).encode())
+        for values in (x_train, y_train, x_validation, y_validation):
+            array = np.ascontiguousarray(values, dtype=np.float64)
+            digest.update(str(array.shape).encode())
+            digest.update(array.tobytes())
+        return digest.hexdigest()
+
+    def init_weights(self, x: np.ndarray, y_mean: float) -> None:
+        """Инициализация KMeans + sigma + consequent из notebook."""
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self.n_inputs:
+            received = x.shape[1] if x.ndim == 2 else 0
+            raise ValueError(f"Ожидалось {self.n_inputs} входов, получено {received}")
+        if len(x) < self.n_rules:
+            raise ValueError("Для инициализации ANFIS недостаточно строк")
+        self.centers_ = _kmeans(x, self.n_rules, self.random_state)
+        distances = np.linalg.norm(x[:, None, :] - self.centers_[None, :, :], axis=2)
+        self.sigmas_ = np.clip(distances.mean(axis=0), 0.1, 1.5)
+        rng = np.random.RandomState(self.random_state)
+        self.consequents_ = rng.normal(0.0, 0.01, size=(self.n_rules, self.n_inputs + 1))
+        self.consequents_[:, 0] = float(y_mean)
+        self.sigma_ = float(np.mean(self.sigmas_))
+        self.ridge_ = 0.0
+
+    def _forward(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.centers_ is None or self.sigmas_ is None or self.consequents_ is None:
+            raise RuntimeError("ANFIS ещё не обучен")
+        values = np.asarray(x, dtype=float)
+        if values.ndim == 1:
+            values = values.reshape(1, -1)
+        if values.ndim != 2 or values.shape[1] != self.n_inputs:
+            raise ValueError("Размерность входов ANFIS не совпадает с числом признаков")
+        x_exp = values[:, None, :]
+        c_exp = self.centers_[None, :, :]
+        s_exp = self.sigmas_[None, :, None]
+        memberships = np.exp(-0.5 * ((x_exp - c_exp) / s_exp) ** 2)
+        firing = np.prod(memberships, axis=2)
+        normalized = firing / np.maximum(firing.sum(axis=1, keepdims=True), 1e-8)
+        x_bias = np.column_stack([np.ones(len(values)), values])
+        rule_outputs = x_bias @ self.consequents_.T
+        prediction = np.sum(normalized * rule_outputs, axis=1)
+        return prediction, normalized, rule_outputs
+
+    def fit(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_validation: np.ndarray,
+        y_validation: np.ndarray,
+    ) -> "ANFIS":
+        x_train = np.asarray(x_train, dtype=float)
+        y_train = np.asarray(y_train, dtype=float).reshape(-1)
+        x_validation = np.asarray(x_validation, dtype=float)
+        y_validation = np.asarray(y_validation, dtype=float).reshape(-1)
+        if len(x_train) != len(y_train) or len(x_validation) != len(y_validation):
+            raise ValueError("Число строк X и y в ANFIS должно совпадать")
+        if x_train.ndim != 2 or x_train.shape[1] != self.n_inputs:
+            raise ValueError("Размерность обучающих входов ANFIS не совпадает с n_inputs")
+
+        self.init_weights(x_train, float(y_train.mean()))
+        parameters = [self.centers_, self.sigmas_, self.consequents_]
+        first_moments = [np.zeros_like(value) for value in parameters]
+        second_moments = [np.zeros_like(value) for value in parameters]
+        best_val_loss = float("inf")
+        best_state: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+        patience_counter = 0
+
+        for epoch in range(1, self.epochs + 1):
+            prediction, normalized, rule_outputs = self._forward(x_train)
+            error = prediction - y_train
+            common = (2.0 / len(x_train)) * error[:, None] * normalized * (rule_outputs - prediction[:, None])
+            diff = x_train[:, None, :] - self.centers_[None, :, :]
+            sigma = self.sigmas_[None, :, None]
+            grad_centers = np.sum(common[:, :, None] * diff / (sigma**2), axis=0)
+            grad_sigmas = np.sum(common * np.sum(diff**2, axis=2) / (self.sigmas_[None, :] ** 3), axis=0)
+            x_bias = np.column_stack([np.ones(len(x_train)), x_train])
+            grad_consequents = ((2.0 / len(x_train)) * error[:, None] * normalized).T @ x_bias
+            gradients = [grad_centers, grad_sigmas, grad_consequents]
+
+            for index, (parameter, gradient) in enumerate(zip(parameters, gradients, strict=True)):
+                gradient = gradient + self.weight_decay * parameter
+                first_moments[index] = 0.9 * first_moments[index] + 0.1 * gradient
+                second_moments[index] = 0.999 * second_moments[index] + 0.001 * gradient**2
+                m_hat = first_moments[index] / (1.0 - 0.9**epoch)
+                v_hat = second_moments[index] / (1.0 - 0.999**epoch)
+                parameter -= self.learning_rate * m_hat / (np.sqrt(v_hat) + 1e-8)
+            self.sigmas_[:] = np.clip(np.abs(self.sigmas_), 0.05, 2.5)
+
+            validation_prediction = self._forward(x_validation)[0]
+            validation_loss = float(np.mean((validation_prediction - y_validation) ** 2))
+            if validation_loss < best_val_loss:
+                best_val_loss = validation_loss
+                best_state = tuple(value.copy() for value in parameters)
+                patience_counter = 0
+            else:
+                patience_counter += 1
+            self.trained_epochs_ = epoch
+            if patience_counter >= self.patience:
+                break
+
+        if best_state is None:
+            raise RuntimeError("ANFIS не смог сохранить лучшее состояние")
+        self.centers_[:], self.sigmas_[:], self.consequents_[:] = best_state
+        self.sigma_ = float(np.mean(self.sigmas_))
+        self.ridge_ = 0.0
+        self.validation_rmse_ = float(np.sqrt(best_val_loss))
+        return self
+
+    def _validate_fitted_state(self) -> None:
+        arrays = {
+            "centers": self.centers_,
+            "sigmas": self.sigmas_,
+            "consequents": self.consequents_,
+        }
+        missing = [name for name, value in arrays.items() if value is None]
+        if missing or self.validation_rmse_ is None:
+            raise ModelArtifactError("ANFIS ещё не обучен: артефакт сохранить нельзя.")
+        expected_shapes = {
+            "centers": (self.n_rules, self.n_inputs),
+            "sigmas": (self.n_rules,),
+            "consequents": (self.n_rules, self.n_inputs + 1),
+        }
+        for name, expected in expected_shapes.items():
+            value = np.asarray(arrays[name])
+            if value.shape != expected or not np.isfinite(value).all():
+                raise ModelArtifactError(f"Некорректный параметр ANFIS {name}: ожидалась форма {expected}.")
+        if self.validation_rmse_ < 0 or not np.isfinite(self.validation_rmse_):
+            raise ModelArtifactError("RMSE ANFIS имеет недопустимое значение.")
+        if (self.sigmas_ <= 0).any():
+            raise ModelArtifactError("Ширины функций принадлежности ANFIS должны быть положительными.")
+
+    def save(self, path: Path | str, *, training_signature: str) -> Path:
+        self._validate_fitted_state()
+        if len(training_signature) != 64:
+            raise ValueError("training_signature должен быть SHA-256 отпечатком.")
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w+b", prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False
+            ) as temporary:
+                temporary_name = temporary.name
+                np.savez_compressed(
+                    temporary,
+                    artifact_version=np.asarray([ANFIS_ARTIFACT_VERSION], dtype=np.int64),
+                    model_type=np.asarray(["anfis-gaussian-sugeno"], dtype=np.str_),
+                    feature_names=np.asarray(self.feature_names, dtype=np.str_),
+                    training_signature=np.asarray([training_signature], dtype=np.str_),
+                    centers=np.asarray(self.centers_, dtype=np.float64),
+                    sigmas=np.asarray(self.sigmas_, dtype=np.float64),
+                    consequents=np.asarray(self.consequents_, dtype=np.float64),
+                    validation_rmse=np.asarray([self.validation_rmse_], dtype=np.float64),
+                    n_rules=np.asarray([self.n_rules], dtype=np.int64),
+                    trained_epochs=np.asarray([self.trained_epochs_], dtype=np.int64),
+                )
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_name, target)
+        finally:
+            if temporary_name and os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+        return target
+
+    @classmethod
+    def load(
+        cls,
+        path: Path | str,
+        *,
+        expected_features: Sequence[str],
+        expected_training_signature: str,
+    ) -> "ANFIS":
+        source = Path(path)
+        try:
+            with np.load(source, allow_pickle=False) as artifact:
+                required = {
+                    "artifact_version", "model_type", "feature_names", "training_signature",
+                    "centers", "sigmas", "consequents", "validation_rmse", "n_rules", "trained_epochs",
+                }
+                missing = required.difference(artifact.files)
+                if missing:
+                    raise ModelArtifactError(f"В артефакте ANFIS нет полей: {', '.join(sorted(missing))}.")
+                version = int(np.asarray(artifact["artifact_version"]).item())
+                model_type = str(np.asarray(artifact["model_type"]).item())
+                features = [str(value) for value in np.asarray(artifact["feature_names"]).tolist()]
+                signature = str(np.asarray(artifact["training_signature"]).item())
+                if version != ANFIS_ARTIFACT_VERSION or model_type != "anfis-gaussian-sugeno":
+                    raise ModelArtifactError("Версия или тип артефакта ANFIS не поддерживается.")
+                if features != list(expected_features):
+                    raise ModelArtifactError("Состав или порядок входов ANFIS изменился.")
+                if signature != expected_training_signature:
+                    raise ModelArtifactError("ANFIS обучен на другой версии данных или настроек.")
+                n_rules = int(np.asarray(artifact["n_rules"]).item())
+                model = cls(features, n_rules=n_rules)
+                model.centers_ = np.asarray(artifact["centers"], dtype=float)
+                model.sigmas_ = np.asarray(artifact["sigmas"], dtype=float)
+                model.consequents_ = np.asarray(artifact["consequents"], dtype=float)
+                model.validation_rmse_ = float(np.asarray(artifact["validation_rmse"]).item())
+                model.trained_epochs_ = int(np.asarray(artifact["trained_epochs"]).item())
+                model.sigma_ = float(np.mean(model.sigmas_))
+                model.ridge_ = 0.0
+        except ModelArtifactError:
+            raise
+        except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as error:
+            raise ModelArtifactError(f"Не удалось прочитать артефакт ANFIS {source.name}: {error}") from error
+        model._validate_fitted_state()
+        return model
+
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        return self._forward(np.asarray(x, dtype=float))[0]
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        """Совместимый с notebook вызов прямого прохода модели."""
+        return self.predict(x).reshape(-1, 1)
+
+    def feature_effects(self, x_reference: np.ndarray, delta: float = 0.05) -> dict[str, float]:
+        values = np.asarray(x_reference, dtype=float)
+        if values.ndim == 1:
+            values = values.reshape(1, -1)
+        if delta <= 0:
+            raise ValueError("delta должен быть положительным")
+        effects: dict[str, float] = {}
+        for index, name in enumerate(self.feature_names):
+            lower = values.copy()
+            upper = values.copy()
+            lower[:, index] -= delta
+            upper[:, index] += delta
+            effects[name] = float(np.mean(self.predict(upper) - self.predict(lower)) / (2 * delta))
         return effects
 
 
