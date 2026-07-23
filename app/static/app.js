@@ -41,7 +41,7 @@ const customerGuide = [
     explanation: "Краткая управленческая сводка последнего доступного периода: где транспортная система находится сейчас и какие значения используются как точка отсчёта.",
   },
   {
-    id: "datasets", index: "03", title: "Данные для расчёта",
+    id: "datasets", index: "04", title: "Данные для расчёта",
     explanation: "Показывает активный XLSX. Пользователь может выбрать файл, проверить квартал, исправить 31 показатель или добавить новую строку.",
   },
 ];
@@ -70,8 +70,7 @@ const technicalGuide = [
 ];
 
 const mapGuide = {
-  id: "map", index: "04", title: "Граф связей FCM",
-  explanation: "Показывает, какие решения и городские факторы связаны с безопасностью, регулярностью и доступностью. По графу можно проследить логику сценарного результата.",
+  id: "map", index: "03", title: "Граф связей FCM",
 };
 
 const sectionGuide = [...customerGuide, ...technicalGuide, mapGuide];
@@ -117,6 +116,8 @@ function initializePageStructure() {
     heading.querySelector(".section-index").textContent = item.index;
     heading.querySelector("h2").textContent = item.title;
 
+    if (item.id === "map") return;
+
     const help = document.createElement("span");
     help.className = "section-help";
     help.innerHTML = `<button class="section-help-trigger" type="button" aria-describedby="help-${item.id}">Что показывает?</button>
@@ -125,6 +126,25 @@ function initializePageStructure() {
 
   });
 
+  // Раздел 02 и весь последующий контент доступны внутри одной гармошки.
+  const secondary = document.createElement("section");
+  secondary.id = "secondaryAccordion";
+  secondary.className = "section-block secondary-accordion";
+  secondary.innerHTML = `
+    <div class="section-heading"><div><span class="section-index">02</span><h2>FCM-советчик</h2></div><p>Состояние, данные и аналитика</p></div>
+    <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="secondaryAccordionContent">
+      <span><strong class="accordion-action">Развернуть разделы</strong><small>Подсказки FCM, состояние, данные и аналитика</small></span><b aria-hidden="true">⌄</b>
+    </button>
+    <div id="secondaryAccordionContent" class="accordion-content technical-stack" hidden></div>`;
+  const secondaryContent = secondary.querySelector("#secondaryAccordionContent");
+  ["overview", "history", "indices", "models", "sensitivity", "analysis", "technicalAppendix"]
+    .map(id => document.getElementById(id)).filter(Boolean).forEach(section => secondaryContent.appendChild(section));
+  const scenariosSection = document.getElementById("scenarios");
+  const mapSection = document.getElementById("map");
+  main.insertBefore(secondary, mapSection || (scenariosSection ? scenariosSection.nextSibling : main.firstChild));
+  const datasetsSection = document.getElementById("datasets");
+  if (datasetsSection && mapSection) main.insertBefore(datasetsSection, mapSection.nextSibling);
+
   appendix.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
     const toggle = event.currentTarget;
     setAccordionExpanded(appendix, toggle.getAttribute("aria-expanded") !== "true");
@@ -132,12 +152,16 @@ function initializePageStructure() {
 
   document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener("click", () => {
     const target = document.getElementById(link.getAttribute("href").slice(1));
-    if (target && (target === appendix || appendix.contains(target))) setAccordionExpanded(appendix, true);
+    if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
   }));
   if (window.location.hash) {
     const target = document.getElementById(window.location.hash.slice(1));
-    if (target && (target === appendix || appendix.contains(target))) setAccordionExpanded(appendix, true);
+    if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
   }
+  secondary.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
+    const toggle = event.currentTarget;
+    setAccordionExpanded(secondary, toggle.getAttribute("aria-expanded") !== "true");
+  });
 }
 
 class ApiError extends Error {
@@ -397,7 +421,10 @@ function renderAnalysis() {
 
 function renderDatasetCatalog() {
   const select = document.getElementById("datasetSelect");
-  const selected = select.value || state.datasets.active;
+  const defaultDataset = "smolensk_dataset_shared.xlsx";
+  const selected = state.datasets.datasets.some(item => item.name === defaultDataset)
+    ? defaultDataset
+    : (select.value || state.datasets.active);
   select.innerHTML = state.datasets.datasets.map(item =>
     `<option value="${escapeHtml(item.name)}">${item.active ? "● " : ""}${escapeHtml(item.name)} · ${item.rows} строк</option>`).join("");
   select.value = state.datasets.datasets.some(item => item.name === selected) ? selected : state.datasets.active;
@@ -466,8 +493,12 @@ function renderDatasetDetail() {
     "скорость_магистрали_B_кмч", "дтп_10тыс_B", "дороги_норматив_pct_C",
   ];
   const previewColumns = previewIds.map(id => detail.columns.find(column => column.id === id)).filter(Boolean);
-  document.getElementById("datasetPreviewHead").innerHTML = `<tr><th>Квартал</th>${previewColumns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
-  document.getElementById("datasetPreviewBody").innerHTML = detail.rows_data.slice(-5).map(row => `<tr><td><strong>${escapeHtml(row.period)}</strong></td>${previewColumns.map(column => `<td>${formatNumber(row.values[column.id], 2)}</td>`).join("")}</tr>`).join("");
+  const previewHead = document.getElementById("datasetPreviewHead");
+  const previewBody = document.getElementById("datasetPreviewBody");
+  if (previewHead && previewBody) {
+    previewHead.innerHTML = `<tr><th>Квартал</th>${previewColumns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
+    previewBody.innerHTML = detail.rows_data.slice(-5).map(row => `<tr><td><strong>${escapeHtml(row.period)}</strong></td>${previewColumns.map(column => `<td>${formatNumber(row.values[column.id], 2)}</td>`).join("")}</tr>`).join("");
+  }
 }
 
 async function loadDatasetDetail(name) {
@@ -658,6 +689,10 @@ async function renderFcm() {
     const target = state.metadata.nodes.find(node => node.id === edge.target);
     document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${source.label} → ${target.label}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${mode}»: ${edge.weight > 0 ? "+" : ""}${edge.weight.toFixed(3)}.</p>`;
   });
+  const fit = () => { if (state.cy) { state.cy.resize(); state.cy.fit(undefined, 36); } };
+  fit();
+  window.requestAnimationFrame(fit);
+  window.setTimeout(fit, 120);
 }
 
 function scenarioReference(scenario) { return scenario.id; }
@@ -1024,7 +1059,7 @@ function bindEvents() {
   });
   document.getElementById("scenarioMode").addEventListener("change", () => runScenario());
   document.getElementById("scenarioHorizon").addEventListener("change", () => runScenario());
-  document.getElementById("resetSliders").addEventListener("click", resetSliders);
+  document.getElementById("resetSliders")?.addEventListener("click", resetSliders);
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
   document.getElementById("saveScenario").addEventListener("click", saveScenario);
   document.getElementById("exportScenario").addEventListener("click", exportSelectedScenario);
@@ -1067,7 +1102,11 @@ async function initializeApplication() {
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
     renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective();
-    await loadDatasetDetail(state.datasets.active);
+    const initialDataset = state.datasets.datasets.some(item => item.name === "smolensk_dataset_shared.xlsx")
+      ? "smolensk_dataset_shared.xlsx"
+      : state.datasets.active;
+    document.getElementById("datasetSelect").value = initialDataset;
+    await loadDatasetDetail(initialDataset);
     await renderFcm();
     await runScenario();
   } catch (error) {

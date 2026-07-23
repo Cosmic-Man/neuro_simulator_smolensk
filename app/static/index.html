@@ -20,10 +20,9 @@
     <nav class="topbar">
       <div class="nav-links">
         <a href="#scenarios">Решения</a>
-        <a href="#overview">Состояние</a>
-        <a href="#datasets">Данные</a>
+        <a href="#secondaryAccordion">FCM</a>
         <a href="#map">Граф связей</a>
-        <a href="#technicalAppendix">Графики</a>
+        <a href="#datasets">Данные</a>
       </div>
       <div class="topbar-actions">
         <div id="apiStatus" class="status-pill" role="status" aria-label="Подключение"><span></span></div>
@@ -148,12 +147,11 @@
 
     <section id="map" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">05</span><h2>Нечёткая когнитивная карта</h2></div>
-        <p>Зелёные связи усиливают, красные — ослабляют</p>
+        <div><span class="section-index">03</span><h2>Нечёткая когнитивная карта</h2></div>
       </div>
       <div class="panel map-panel">
         <div class="panel-toolbar">
-          <div><span class="panel-kicker">Интерактивная FCM</span><h3>Причинные связи проблемы Б</h3></div>
+          <div><span class="panel-kicker">Интерактивная FCM</span><h3>Причинные связи: Транспортная доступность и безопасность городской мобильности</h3></div>
           <label>Веса<select id="fcmMode"><option value="adapted">Адаптированные</option><option value="expert">Экспертные</option></select></label>
         </div>
         <div class="map-layout">
@@ -307,7 +305,7 @@
 
     <section id="datasets" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">09</span><h2>Данные для расчёта</h2></div>
+        <div><span class="section-index">04</span><h2>Данные для расчёта</h2></div>
         <p>Выбор XLSX, проверка кварталов и добавление новых наблюдений</p>
       </div>
       <article class="panel retraining-card">
@@ -346,10 +344,6 @@
           </details>
         </article>
       </div>
-      <details class="panel dataset-preview-card">
-        <summary>Показать последние строки выбранного файла</summary>
-        <div class="table-wrap"><table><thead id="datasetPreviewHead"></thead><tbody id="datasetPreviewBody"></tbody></table></div>
-      </details>
     </section>
 
     <section id="technicalAppendix" class="section-block technical-appendix">
