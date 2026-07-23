@@ -84,6 +84,8 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios .scenario-controls { position: static; }
 #scenarios .slider-list { max-height: none; overflow: visible; }
 #scenarios .index-actions { display: flex; gap: 8px; margin: 8px 0; }
+#scenarios .horizon-control { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 11px; }
+#scenarios .horizon-control select { width: auto; min-width: 118px; padding: 7px 9px; }
 #scenarios .slider-item { padding: 6px 0; }
 #scenarios .slider-meta { margin-bottom: 3px; }
 #scenarios .business-summary { margin: 0; }
