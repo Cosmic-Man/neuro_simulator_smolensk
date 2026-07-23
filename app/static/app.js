@@ -73,6 +73,44 @@ const mapGuide = {
   id: "map", index: "03", title: "Граф связей FCM",
 };
 
+const fcmAdvisorScenarios = [
+  {
+    id: "inertial",
+    label: "Инерционный",
+    description: "Сохранение текущих темпов ремонта, транспорта и цифровизации.",
+    targets: ["traffic_safety", "transport_regularity", "transport_accessibility"],
+    factors: ["road_condition", "defect_response", "crossings", "congestion", "transit_budget_execution", "average_speed"],
+  },
+  {
+    id: "road_decline",
+    label: "Ухудшение дорожной инфраструктуры",
+    description: "Замедление ремонта и снижение доли нормативных дорог.",
+    targets: ["traffic_safety", "transport_accessibility"],
+    factors: ["road_condition", "defect_response", "road_repair", "road_budget_execution", "congestion"],
+  },
+  {
+    id: "public_transport",
+    label: "Приоритет общественного транспорта",
+    description: "Рост регулярности, связанности маршрутов и качества остановок.",
+    targets: ["transport_regularity", "transport_accessibility"],
+    factors: ["congestion", "transit_budget_execution", "average_speed", "road_wellbeing"],
+  },
+  {
+    id: "digital_mobility",
+    label: "Цифровая мобильность",
+    description: "Управление потоками, маршрутами и светофорными циклами.",
+    targets: ["transport_regularity", "transport_accessibility"],
+    factors: ["congestion", "road_condition", "transport_environment", "average_speed"],
+  },
+  {
+    id: "safety",
+    label: "Безопасность",
+    description: "Пешеходная инфраструктура и устранение опасных участков.",
+    targets: ["traffic_safety"],
+    factors: ["crossings", "defect_response", "road_condition", "road_quality", "safety_budget_execution"],
+  },
+];
+
 const sectionGuide = [...customerGuide, ...technicalGuide, mapGuide];
 
 function resizeSectionVisuals(section) {
@@ -132,6 +170,32 @@ function initializePageStructure() {
   secondary.className = "section-block secondary-accordion";
   secondary.innerHTML = `
     <div class="section-heading"><div><span class="section-index">02</span><h2>FCM-советчик</h2></div><p>Состояние, данные и аналитика</p></div>
+    <div class="panel fcm-advisor-panel">
+      <div class="fcm-advisor-grid">
+        <div>
+          <div class="fcm-advisor-heading">
+            <div><span class="panel-kicker">Сценарии</span><h3>Выберите до трёх</h3></div>
+            <span id="fcmAdvisorCount" class="fcm-advisor-count">1 из 3</span>
+          </div>
+          <div id="fcmAdvisorScenarios" class="fcm-advisor-scenarios">
+            ${fcmAdvisorScenarios.map((scenario, index) => `
+              <label class="fcm-advisor-option">
+                <input type="checkbox" value="${scenario.id}"${index === 0 ? " checked" : ""}>
+                <span><strong>${scenario.label}</strong><small>${scenario.description}</small></span>
+              </label>`).join("")}
+          </div>
+        </div>
+        <div class="fcm-advisor-output">
+          <div class="fcm-advisor-heading">
+            <div><span class="panel-kicker">Совет FCM</span><h3>Что изменить</h3></div>
+            <button id="runFcmAdvisor" class="mini-button" type="button">Обновить</button>
+          </div>
+          <div id="fcmAdvisorResult" class="fcm-advisor-result" aria-live="polite">
+            <p class="fcm-advisor-empty">Загружаем веса модели…</p>
+          </div>
+        </div>
+      </div>
+    </div>
     <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="secondaryAccordionContent">
       <span><strong class="accordion-action">Развернуть разделы</strong><small>Подсказки FCM, состояние, данные и аналитика</small></span><b aria-hidden="true">⌄</b>
     </button>
@@ -670,9 +734,105 @@ function renderAnfisCards() {
     </ul></article>`).join("");
 }
 
+function strongestFcmInfluence(sourceId, targetIds, edges, maxDepth = 4) {
+  const targets = new Set(targetIds);
+  const adjacency = new Map();
+  edges.forEach(edge => {
+    const data = edge.data;
+    if (!adjacency.has(data.source)) adjacency.set(data.source, []);
+    adjacency.get(data.source).push(data);
+  });
+
+  const walk = (nodeId, weight, path, visited) => {
+    if (path.length > 1 && targets.has(nodeId)) return { weight, path };
+    if (path.length > maxDepth) return null;
+    let strongest = null;
+    (adjacency.get(nodeId) || []).forEach(edge => {
+      if (visited.has(edge.target)) return;
+      const result = walk(
+        edge.target,
+        weight * Number(edge.weight),
+        [...path, edge.target],
+        new Set([...visited, edge.target]),
+      );
+      if (result && (!strongest || Math.abs(result.weight) > Math.abs(strongest.weight))) strongest = result;
+    });
+    return strongest;
+  };
+
+  return walk(sourceId, 1, [sourceId], new Set([sourceId]));
+}
+
+function selectedFcmAdvisorScenarios() {
+  const selected = new Set([...document.querySelectorAll("#fcmAdvisorScenarios input:checked")].map(input => input.value));
+  return fcmAdvisorScenarios.filter(scenario => selected.has(scenario.id));
+}
+
+function syncFcmAdvisorSelection(changedInput = null) {
+  const inputs = [...document.querySelectorAll("#fcmAdvisorScenarios input")];
+  let checked = inputs.filter(input => input.checked);
+  if (checked.length > 3 && changedInput) {
+    changedInput.checked = false;
+    checked = inputs.filter(input => input.checked);
+    showToast("Можно выбрать не более трёх сценариев", true);
+  }
+  inputs.forEach(input => { input.disabled = checked.length >= 3 && !input.checked; });
+  const counter = document.getElementById("fcmAdvisorCount");
+  if (counter) counter.textContent = `${checked.length} из 3`;
+  const button = document.getElementById("runFcmAdvisor");
+  if (button) button.disabled = checked.length === 0;
+  renderFcmAdvisor();
+}
+
+function renderFcmAdvisor() {
+  const container = document.getElementById("fcmAdvisorResult");
+  if (!container) return;
+  const scenarios = selectedFcmAdvisorScenarios();
+  if (!scenarios.length) {
+    container.innerHTML = '<p class="fcm-advisor-empty">Выберите хотя бы один сценарий.</p>';
+    return;
+  }
+  if (!state.graph) {
+    container.innerHTML = '<p class="fcm-advisor-empty">Загружаем веса модели…</p>';
+    return;
+  }
+
+  const nodes = Object.fromEntries(state.graph.nodes.map(node => [node.data.id, node.data]));
+  const mode = document.getElementById("fcmMode")?.value === "expert" ? "экспертный" : "адаптированный";
+  container.innerHTML = scenarios.map(scenario => {
+    const measures = scenario.factors
+      .map(factorId => {
+        const influence = strongestFcmInfluence(factorId, scenario.targets, state.graph.edges);
+        return influence ? { factorId, ...influence } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight))
+      .slice(0, 3);
+    const items = measures.map((measure, index) => {
+      const factor = nodes[measure.factorId];
+      const target = nodes[measure.path.at(-1)];
+      const action = scenario.id === "inertial"
+        ? (measure.weight < 0 ? "Сдерживать" : "Поддерживать")
+        : (measure.weight < 0 ? "Снизить" : "Повысить");
+      const label = factor?.label || measure.factorId;
+      const formattedWeight = `${measure.weight >= 0 ? "+" : "−"}${Math.abs(measure.weight).toFixed(2).replace(".", ",")}`;
+      return `<li>
+        <span class="fcm-advice-rank">${index + 1}</span>
+        <span><strong>${action} ${escapeHtml(label.charAt(0).toLowerCase() + label.slice(1))}</strong>
+        <small>вес ${formattedWeight} · ${escapeHtml(target?.label || "цель сценария")}</small></span>
+      </li>`;
+    }).join("");
+    return `<article class="fcm-advice-card">
+      <h4>${escapeHtml(scenario.label)}</h4>
+      <ol>${items || "<li>Для этого сценария недостаточно связей.</li>"}</ol>
+    </article>`;
+  }).join("") + `<p class="fcm-advisor-note">Ранжирование: ${mode} вес FCM по сильнейшему пути к цели.</p>`;
+}
+
 async function renderFcm() {
   const mode = document.getElementById("fcmMode").value;
   state.graph = await api(`/api/fcm?mode=${mode}`);
+  renderFcmAdvisor();
   if (state.cy) state.cy.destroy();
   state.cy = cytoscape({
     container: document.getElementById("fcmGraph"), elements: [...state.graph.nodes, ...state.graph.edges],
@@ -1082,6 +1242,11 @@ function renderSensitivity() {
 function bindEvents() {
   if (state.eventsBound) return;
   state.eventsBound = true;
+  document.getElementById("fcmAdvisorScenarios")?.addEventListener("change", event => {
+    if (event.target.matches('input[type="checkbox"]')) syncFcmAdvisorSelection(event.target);
+  });
+  document.getElementById("runFcmAdvisor")?.addEventListener("click", renderFcmAdvisor);
+  syncFcmAdvisorSelection();
   document.getElementById("historyMetric").addEventListener("change", renderHistory);
   document.getElementById("fuzzyIndexSelect").addEventListener("change", renderFuzzyIndexPlot);
   document.getElementById("evaluationTarget").addEventListener("change", renderEvaluation);
