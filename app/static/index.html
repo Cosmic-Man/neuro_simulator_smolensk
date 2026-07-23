@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/assets/styles.css?v=20260723-index-overflow">
   <script defer src="/assets/vendor/plotly.min.js"></script>
   <script defer src="/assets/vendor/cytoscape.min.js"></script>
-  <script defer src="/assets/app.js?v=20260723-map-last-menu"></script>
+  <script defer src="/assets/app.js?v=20260723-map-scenario-step1"></script>
 </head>
 <body>
   <span id="nodeCount" hidden></span><span id="edgeCount" hidden></span><span id="scenarioCount" hidden></span>
@@ -152,6 +152,21 @@
       <div class="panel map-panel">
         <div class="panel-toolbar">
           <label>Веса<select id="fcmMode"><option value="adapted">Адаптированные</option><option value="expert">Экспертные</option></select></label>
+        </div>
+        <div id="fcmScenarioBridge" class="fcm-scenario-bridge" aria-live="polite">
+          <div class="fcm-scenario-bridge-copy">
+            <span class="panel-kicker">Сценарий 02 → карта 03</span>
+            <strong id="fcmScenarioBridgeTitle">Выберите сценарий в пункте 02</strong>
+            <p id="fcmScenarioBridgeText">После расчёта карта покажет, какие узлы изменились и как эффект проходит по стрелкам.</p>
+          </div>
+          <div class="fcm-scenario-bridge-controls">
+            <div id="fcmScenarioTimeline" class="fcm-scenario-timeline" aria-label="Шаг симуляции"></div>
+            <div class="fcm-scenario-legend">
+              <span><i class="legend-dot positive"></i>рост</span>
+              <span><i class="legend-dot negative"></i>снижение</span>
+              <span><i class="legend-dot neutral"></i>без заметного сдвига</span>
+            </div>
+          </div>
         </div>
         <div class="map-layout">
           <div id="fcmGraph" aria-label="Граф когнитивной карты"></div>

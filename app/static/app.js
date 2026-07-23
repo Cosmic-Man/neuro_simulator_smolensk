@@ -12,6 +12,8 @@ const state = {
   baseIndexValues: {},
   graph: null,
   cy: null,
+  fcmScenarioSimulation: null,
+  fcmScenarioRequest: 0,
   budgetAnalysis: null,
   improvementRecommendations: null,
   eventsBound: false,
@@ -76,6 +78,7 @@ const mapGuide = {
 const fcmAdvisorScenarios = [
   {
     id: "inertial",
+    simulationId: "inertial",
     label: "Инерционный",
     description: "Сохранение текущих темпов ремонта, транспорта и цифровизации.",
     targets: ["traffic_safety", "transport_regularity", "transport_accessibility"],
@@ -83,6 +86,7 @@ const fcmAdvisorScenarios = [
   },
   {
     id: "road_decline",
+    simulationId: "road_infrastructure_decline",
     label: "Ухудшение дорожной инфраструктуры",
     description: "Замедление ремонта и снижение доли нормативных дорог.",
     targets: ["traffic_safety", "transport_accessibility"],
@@ -90,6 +94,7 @@ const fcmAdvisorScenarios = [
   },
   {
     id: "public_transport",
+    simulationId: "public_transport_priority",
     label: "Приоритет общественного транспорта",
     description: "Рост регулярности, связанности маршрутов и качества остановок.",
     targets: ["transport_regularity", "transport_accessibility"],
@@ -97,6 +102,7 @@ const fcmAdvisorScenarios = [
   },
   {
     id: "digital_mobility",
+    simulationId: "digital_mobility",
     label: "Цифровая мобильность",
     description: "Управление потоками, маршрутами и светофорными циклами.",
     targets: ["transport_regularity", "transport_accessibility"],
@@ -104,6 +110,7 @@ const fcmAdvisorScenarios = [
   },
   {
     id: "safety",
+    simulationId: "traffic_safety_priority",
     label: "Безопасность",
     description: "Пешеходная инфраструктура и устранение опасных участков.",
     targets: ["traffic_safety"],
@@ -768,6 +775,160 @@ function selectedFcmAdvisorScenarios() {
   return fcmAdvisorScenarios.filter(scenario => selected.has(scenario.id));
 }
 
+function mergeFcmScenarioResults(scenarios, results) {
+  const runs = results.map((result, index) => ({
+    scenario: scenarios[index],
+    simulation: result.fcm_simulation,
+  }));
+  const horizon = Math.max(...runs.map(run => run.simulation.steps.length - 1));
+  const nodeIds = state.graph.nodes.map(node => node.data.id);
+  const steps = Array.from({ length: horizon + 1 }, (_, step) => {
+    const samples = runs.map(run => {
+      const sourceSteps = run.simulation.steps;
+      return sourceSteps[Math.min(step, sourceSteps.length - 1)];
+    });
+    const nodes = Object.fromEntries(nodeIds.map(nodeId => {
+      const values = samples.map(sample => sample.nodes[nodeId]).filter(Boolean);
+      const average = key => values.reduce((sum, value) => sum + Number(value[key] || 0), 0) / Math.max(values.length, 1);
+      const baseline = average("baseline");
+      const scenario = average("scenario");
+      return [nodeId, {
+        baseline: Number(baseline.toFixed(4)),
+        scenario: Number(scenario.toFixed(4)),
+        delta: Number((scenario - baseline).toFixed(4)),
+      }];
+    }));
+    return { step, period: samples[0]?.period || `Шаг ${step}`, nodes };
+  });
+  return {
+    steps,
+    scenarios,
+    max_abs_delta: Math.max(...steps.flatMap(step => Object.values(step.nodes).map(node => Math.abs(node.delta))), 0),
+    activeStep: Math.min(1, steps.length - 1),
+  };
+}
+
+function renderFcmScenarioBridge() {
+  const title = document.getElementById("fcmScenarioBridgeTitle");
+  const text = document.getElementById("fcmScenarioBridgeText");
+  const timeline = document.getElementById("fcmScenarioTimeline");
+  if (!title || !text || !timeline) return;
+  const simulation = state.fcmScenarioSimulation;
+  if (!simulation) {
+    title.textContent = "Выберите сценарий в пункте 02";
+    text.textContent = "После расчёта карта покажет, какие узлы изменились и как эффект проходит по стрелкам.";
+    timeline.innerHTML = '<span class="fcm-scenario-empty">Симуляция ещё не запущена</span>';
+    return;
+  }
+  const activeStep = simulation.steps[simulation.activeStep] || simulation.steps.at(-1);
+  const selectedLabels = simulation.scenarios.map(scenario => scenario.label).join(" + ");
+  const changed = Object.entries(activeStep.nodes)
+    .filter(([, node]) => Math.abs(Number(node.delta)) >= 0.1)
+    .sort(([, a], [, b]) => Math.abs(Number(b.delta)) - Math.abs(Number(a.delta)));
+  const strongest = changed[0];
+  const strongestNode = state.graph.nodes.find(node => node.data.id === strongest?.[0]);
+  title.textContent = simulation.scenarios.length === 1 ? selectedLabels : `Сводный эффект: ${selectedLabels}`;
+  text.textContent = strongest
+    ? `${activeStep.period}: сильнее всего меняется «${strongestNode?.data.label || strongest[0]}» на ${strongest[1].delta >= 0 ? "+" : ""}${formatNumber(strongest[1].delta, 1)} п.п. Толщина подсвеченных стрелок показывает распространение эффекта.`
+    : `${activeStep.period}: заметного отклонения от инерционного состояния пока нет.`;
+  timeline.innerHTML = simulation.steps.map(step => `
+    <button class="fcm-scenario-step${step.step === simulation.activeStep ? " active" : ""}" type="button" data-fcm-step="${step.step}" aria-pressed="${step.step === simulation.activeStep}">
+      <span>${step.step === 0 ? "Сейчас" : `+${step.step}`}</span><small>${escapeHtml(step.period)}</small>
+    </button>`).join("");
+}
+
+function resetFcmScenarioGraph() {
+  state.fcmScenarioSimulation = null;
+  if (state.cy) {
+    state.cy.nodes().forEach(node => {
+      node.removeStyle();
+      node.data({ displayLabel: node.data("label"), scenarioValue: null, scenarioDelta: null });
+    });
+    state.cy.edges().forEach(edge => edge.removeStyle());
+  }
+  renderFcmScenarioBridge();
+}
+
+function applyFcmScenarioStep(stepNumber) {
+  const simulation = state.fcmScenarioSimulation;
+  if (!simulation || !state.cy) return;
+  const stepIndex = Math.max(0, Math.min(Number(stepNumber), simulation.steps.length - 1));
+  simulation.activeStep = stepIndex;
+  const step = simulation.steps[stepIndex];
+  const maxDelta = Math.max(...Object.values(step.nodes).map(node => Math.abs(Number(node.delta))), 0.1);
+  const baseColor = node => node.data("kind") === "target"
+    ? colors.coral
+    : node.data("kind") === "control" ? colors.gold : colors.blue;
+  state.cy.nodes().forEach(node => {
+    const snapshot = step.nodes[node.id()];
+    if (!snapshot) return;
+    const delta = Number(snapshot.delta);
+    const intensity = Math.min(Math.abs(delta) / maxDelta, 1);
+    const changed = Math.abs(delta) >= 0.1;
+    const accent = delta > 0.1 ? colors.teal : delta < -0.1 ? colors.coral : baseColor(node);
+    node.removeStyle();
+    node.removeClass("scenario-positive scenario-negative scenario-neutral");
+    node.addClass(delta > 0.1 ? "scenario-positive" : delta < -0.1 ? "scenario-negative" : "scenario-neutral");
+    node.data({
+      displayLabel: changed ? `${node.data("label")}\n${delta >= 0 ? "+" : ""}${formatNumber(delta, 1)} п.п.` : node.data("label"),
+      scenarioValue: Number(snapshot.scenario),
+      scenarioDelta: delta,
+    });
+    const nodeStyle = {
+      "background-color": accent,
+      "border-width": changed ? 3 + intensity * 5 : 1,
+      "border-color": changed ? accent : "rgba(17,42,43,.22)",
+      label: "data(displayLabel)",
+    };
+    if (changed) {
+      nodeStyle.width = 32 + intensity * 18;
+      nodeStyle.height = 32 + intensity * 18;
+    }
+    node.style(nodeStyle);
+  });
+  state.cy.edges().forEach(edge => {
+    const sourceDelta = Number(step.nodes[edge.data("source")]?.delta || 0);
+    const targetDelta = Number(step.nodes[edge.data("target")]?.delta || 0);
+    const flow = Math.max(Math.abs(sourceDelta), Math.abs(targetDelta));
+    const normalized = Math.min(flow / maxDelta, 1);
+    const baseEdgeColor = edge.data("sign") === "negative" ? colors.coral : colors.teal;
+    const flowColor = targetDelta > 0.1 ? colors.teal : targetDelta < -0.1 ? colors.coral : baseEdgeColor;
+    edge.removeStyle();
+    edge.style({
+      width: 1 + Math.abs(Number(edge.data("weight"))) * 2 + normalized * 4,
+      opacity: flow >= 0.1 ? 0.35 + normalized * 0.65 : 0.22,
+      "line-color": flow >= 0.1 ? flowColor : baseEdgeColor,
+      "target-arrow-color": flow >= 0.1 ? flowColor : baseEdgeColor,
+    });
+  });
+  renderFcmScenarioBridge();
+}
+
+async function updateFcmScenarioMap() {
+  const selected = selectedFcmAdvisorScenarios();
+  const requestId = ++state.fcmScenarioRequest;
+  if (!selected.length) {
+    resetFcmScenarioGraph();
+    return;
+  }
+  if (!state.graph || !state.cy) {
+    renderFcmScenarioBridge();
+    return;
+  }
+  const mode = document.getElementById("fcmMode")?.value || "adapted";
+  try {
+    const results = await Promise.all(selected.map(scenario => api("/api/simulate", {
+      method: "POST",
+      body: JSON.stringify({ scenario: scenario.simulationId, mode }),
+    })));
+    if (requestId !== state.fcmScenarioRequest) return;
+    state.fcmScenarioSimulation = mergeFcmScenarioResults(selected, results);
+    applyFcmScenarioStep(state.fcmScenarioSimulation.activeStep);
+  } catch (error) {
+    if (requestId === state.fcmScenarioRequest) showToast(`Не удалось показать сценарий на карте: ${error.message}`, true);
+  }
+}
+
 function syncFcmAdvisorSelection(changedInput = null) {
   const inputs = [...document.querySelectorAll("#fcmAdvisorScenarios input")];
   let checked = inputs.filter(input => input.checked);
@@ -782,6 +943,7 @@ function syncFcmAdvisorSelection(changedInput = null) {
   const button = document.getElementById("runFcmAdvisor");
   if (button) button.disabled = checked.length === 0;
   renderFcmAdvisor();
+  updateFcmScenarioMap();
 }
 
 function renderFcmAdvisor() {
@@ -832,12 +994,18 @@ function renderFcmAdvisor() {
 async function renderFcm() {
   const mode = document.getElementById("fcmMode").value;
   state.graph = await api(`/api/fcm?mode=${mode}`);
+  state.fcmScenarioSimulation = null;
+  renderFcmScenarioBridge();
   renderFcmAdvisor();
   if (state.cy) state.cy.destroy();
+  const graphNodes = state.graph.nodes.map(node => ({
+    ...node,
+    data: { ...node.data, displayLabel: node.data.label },
+  }));
   state.cy = cytoscape({
-    container: document.getElementById("fcmGraph"), elements: [...state.graph.nodes, ...state.graph.edges],
+    container: document.getElementById("fcmGraph"), elements: [...graphNodes, ...state.graph.edges],
     style: [
-      { selector: "node", style: { "background-color": colors.blue, label: "data(label)", color: colors.ink, "font-size": 10, "text-wrap": "wrap", "text-max-width": 95, "text-valign": "bottom", "text-margin-y": 8, width: 32, height: 32 } },
+      { selector: "node", style: { "background-color": colors.blue, label: "data(displayLabel)", color: colors.ink, "font-size": 10, "text-wrap": "wrap", "text-max-width": 95, "text-valign": "bottom", "text-margin-y": 8, width: 32, height: 32 } },
       { selector: 'node[kind = "control"]', style: { "background-color": colors.gold, shape: "round-rectangle" } },
       { selector: 'node[kind = "target"]', style: { "background-color": colors.coral, width: 42, height: 42 } },
       { selector: "edge", style: { width: "mapData(weight, -1, 1, 1, 5)", "curve-style": "bezier", "target-arrow-shape": "triangle", "line-color": colors.teal, "target-arrow-color": colors.teal, opacity: .72, label: "data(label)", "font-size": 8, "text-background-opacity": .8, "text-background-color": "#f4f1e8" } },
@@ -846,10 +1014,7 @@ async function renderFcm() {
     layout: { name: "cose", animate: false, padding: 38, nodeRepulsion: 520000, idealEdgeLength: 110 },
   });
   state.cy.on("tap", "edge", event => {
-    const edge = event.target.data();
-    const source = state.metadata.nodes.find(node => node.id === edge.source);
-    const target = state.metadata.nodes.find(node => node.id === edge.target);
-    document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${source.label} → ${target.label}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${mode}»: ${edge.weight > 0 ? "+" : ""}${edge.weight.toFixed(3)}.</p>`;
+    renderFcmEdgeInspector(event.target.data(), mode);
   });
   const fit = () => {
     if (!state.cy) return;
@@ -860,6 +1025,19 @@ async function renderFcm() {
   fit();
   window.requestAnimationFrame(fit);
   window.setTimeout(fit, 120);
+  await updateFcmScenarioMap();
+}
+
+function renderFcmEdgeInspector(edge, mode) {
+  const source = state.metadata.nodes.find(node => node.id === edge.source);
+  const target = state.metadata.nodes.find(node => node.id === edge.target);
+  const scenarioStep = state.fcmScenarioSimulation?.steps[state.fcmScenarioSimulation.activeStep];
+  const sourceDelta = scenarioStep?.nodes[edge.source]?.delta;
+  const targetDelta = scenarioStep?.nodes[edge.target]?.delta;
+  const simulationLine = sourceDelta == null
+    ? ""
+    : `<div class="edge-simulation-readout"><span>Сдвиг узлов на шаге</span><strong>${sourceDelta >= 0 ? "+" : ""}${formatNumber(sourceDelta, 1)} → ${targetDelta >= 0 ? "+" : ""}${formatNumber(targetDelta, 1)} п.п.</strong></div>`;
+  document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${escapeHtml(source?.label || edge.source)} → ${escapeHtml(target?.label || edge.target)}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${escapeHtml(mode)}»: ${edge.weight > 0 ? "+" : ""}${Number(edge.weight).toFixed(3)}.</p>${simulationLine}`;
 }
 
 async function exportDataset() {
@@ -1244,8 +1422,16 @@ function bindEvents() {
   document.getElementById("fcmAdvisorScenarios")?.addEventListener("change", event => {
     if (event.target.matches('input[type="checkbox"]')) syncFcmAdvisorSelection(event.target);
   });
-  document.getElementById("runFcmAdvisor")?.addEventListener("click", renderFcmAdvisor);
+  document.getElementById("runFcmAdvisor")?.addEventListener("click", () => {
+    renderFcmAdvisor();
+    updateFcmScenarioMap();
+  });
   syncFcmAdvisorSelection();
+  document.getElementById("fcmScenarioTimeline")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-fcm-step]");
+    if (!button || !state.fcmScenarioSimulation) return;
+    applyFcmScenarioStep(Number(button.dataset.fcmStep));
+  });
   document.getElementById("historyMetric").addEventListener("change", renderHistory);
   document.getElementById("fuzzyIndexSelect").addEventListener("change", renderFuzzyIndexPlot);
   document.getElementById("evaluationTarget").addEventListener("change", renderEvaluation);
