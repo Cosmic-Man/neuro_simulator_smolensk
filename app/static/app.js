@@ -16,7 +16,19 @@ const state = {
   fcmScenarioRequest: 0,
   budgetAnalysis: null,
   improvementRecommendations: null,
+  recoveredChartsRendered: false,
   eventsBound: false,
+};
+
+const LAYOUT_STORAGE_KEY = "smolensk.interface-layout.v1";
+const layoutState = {
+  initialized: false,
+  preferences: { order: {}, hidden: {}, accordion: {} },
+  defaults: new Map(),
+  sectionDefaults: { placement: new Map(), mainOrder: [], accordionOrder: [] },
+  groups: new Map(),
+  draggedRow: null,
+  returnFocus: null,
 };
 
 const colors = {
@@ -35,7 +47,7 @@ const baseLayout = {
 
 const customerGuide = [
   {
-    id: "scenarios", index: "01", title: "Предсказание индекса",
+    id: "scenarios", index: "01", title: "Предсказание индекса транспортной доступности",
     explanation: "Выберите проблемную цель, получите пять мер, задайте воздействия и сравните ожидаемый эффект с инерционным вариантом.",
   },
   {
@@ -50,23 +62,23 @@ const customerGuide = [
 
 const technicalGuide = [
   {
-    id: "sensitivity", index: "A1", title: "Чувствительность",
+    id: "sensitivity", index: "05", title: "Чувствительность",
     explanation: "Ранжирует направления по силе влияния на выбранную цель.",
   },
   {
-    id: "history", index: "A2", title: "Динамика target и показателей",
+    id: "history", index: "06", title: "Динамика target и показателей",
     explanation: "Показывает устойчивость изменений во времени, сезонные колебания и периоды улучшения или ухудшения — чтобы не принять единичный всплеск за долгосрочный тренд.",
   },
   {
-    id: "indices", index: "A3", title: "Сводные индексы",
+    id: "indices", index: "07", title: "Сводные индексы",
     explanation: "Собирает множество разрозненных показателей в понятные оценки от 0 до 100 и показывает, из каких направлений складывается общая ситуация.",
   },
   {
-    id: "models", index: "A4", title: "Проверка моделей",
+    id: "models", index: "08", title: "Проверка моделей",
     explanation: "Показывает, насколько прогнозы совпадали с уже известными данными. Заказчик видит, на какой метод можно опираться и где сохраняется неопределённость.",
   },
   {
-    id: "analysis", index: "A5", title: "Диаграмма размаха и функции принадлежности",
+    id: "analysis", index: "09", title: "Boxplot и функции принадлежности",
     explanation: "Показывает исходную проверку данных: типичные диапазоны, выбросы, нечёткие границы оценок и веса итогового индекса. Это делает расчёт из Pipeline.ipynb наглядным для заказчика.",
   },
 ];
@@ -135,6 +147,20 @@ function resizeSectionVisuals(section) {
   window.setTimeout(resize, 240);
 }
 
+function archiveSectionRange() {
+  const main = document.querySelector("main.shell");
+  const appendix = document.getElementById("technicalAppendix");
+  const count = document.querySelectorAll("#technicalAppendixContent > section").length;
+  const pageCount = main
+    ? [...main.children].filter(element => element.matches("section") && element !== appendix).length
+    : 4;
+  const start = pageCount + 1;
+  const end = start + Math.max(count - 1, 0);
+  const startLabel = String(start).padStart(2, "0");
+  const endLabel = String(end).padStart(2, "0");
+  return count > 1 ? `${startLabel}–${endLabel}` : startLabel;
+}
+
 function setAccordionExpanded(section, expanded) {
   const toggle = section.querySelector(":scope > .accordion-toggle");
   const content = section.querySelector(":scope > .accordion-content");
@@ -142,7 +168,11 @@ function setAccordionExpanded(section, expanded) {
   toggle.setAttribute("aria-expanded", String(expanded));
   content.hidden = !expanded;
   section.classList.toggle("accordion-expanded", expanded);
-  toggle.querySelector(".accordion-action").textContent = expanded ? "Свернуть графики" : "Развернуть графики";
+  const isArchive = section.id === "technicalAppendix";
+  const archiveRange = archiveSectionRange();
+  toggle.querySelector(".accordion-action").textContent = expanded
+    ? (isArchive ? `Свернуть разделы ${archiveRange}` : "Свернуть разделы")
+    : (isArchive ? `Развернуть разделы ${archiveRange}` : "Развернуть разделы");
   if (expanded) resizeSectionVisuals(section);
 }
 
@@ -151,7 +181,8 @@ function initializePageStructure() {
   const appendix = document.getElementById("technicalAppendix");
   const appendixContent = document.getElementById("technicalAppendixContent");
   customerGuide.forEach(item => main.insertBefore(document.getElementById(item.id), appendix));
-  technicalGuide.forEach(item => appendixContent.appendChild(document.getElementById(item.id)));
+  const notebookAnchor = document.getElementById("notebookCharts");
+  technicalGuide.forEach(item => appendixContent.insertBefore(document.getElementById(item.id), notebookAnchor));
   // Граф FCM — отдельный раздел перед техническими графиками.
   main.insertBefore(document.getElementById("map"), appendix);
 
@@ -176,7 +207,7 @@ function initializePageStructure() {
   secondary.id = "secondaryAccordion";
   secondary.className = "section-block secondary-accordion";
   secondary.innerHTML = `
-    <div class="section-heading"><div><span class="section-index">02</span><h2>FCM-советчик</h2></div><p>Состояние, данные и аналитика</p></div>
+    <div class="section-heading"><div><span class="section-index">02</span><h2>FCM-советчик</h2></div><p>Текущее состояние модели</p></div>
     <div class="panel fcm-advisor-panel">
       <div class="fcm-advisor-grid">
         <div>
@@ -204,30 +235,42 @@ function initializePageStructure() {
       </div>
     </div>
     <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="secondaryAccordionContent">
-      <span><strong class="accordion-action">Развернуть разделы</strong><small>Подсказки FCM, состояние, данные и аналитика</small></span><b aria-hidden="true">⌄</b>
+      <span><strong class="accordion-action">Развернуть разделы</strong><small>Подсказки FCM и текущее состояние</small></span><b aria-hidden="true">⌄</b>
     </button>
     <div id="secondaryAccordionContent" class="accordion-content technical-stack" hidden></div>`;
   const secondaryContent = secondary.querySelector("#secondaryAccordionContent");
-  ["overview", "history", "indices", "models", "sensitivity", "analysis", "technicalAppendix"]
-    .map(id => document.getElementById(id)).filter(Boolean).forEach(section => secondaryContent.appendChild(section));
+  ["overview"].map(id => document.getElementById(id)).filter(Boolean)
+    .forEach(section => secondaryContent.appendChild(section));
   const scenariosSection = document.getElementById("scenarios");
   const mapSection = document.getElementById("map");
   main.insertBefore(secondary, mapSection || (scenariosSection ? scenariosSection.nextSibling : main.firstChild));
   const datasetsSection = document.getElementById("datasets");
   if (datasetsSection && mapSection) main.insertBefore(datasetsSection, mapSection.nextSibling);
+  // Все аналитические графики собраны в одной гармошке строго в конце страницы.
+  main.appendChild(appendix);
 
   appendix.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
     const toggle = event.currentTarget;
-    setAccordionExpanded(appendix, toggle.getAttribute("aria-expanded") !== "true");
+    const expanded = toggle.getAttribute("aria-expanded") !== "true";
+    if (expanded) renderRecoveredCharts();
+    setAccordionExpanded(appendix, expanded);
   });
 
   document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener("click", () => {
     const target = document.getElementById(link.getAttribute("href").slice(1));
     if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
+    if (target && target !== appendix && appendix.contains(target)) {
+      renderRecoveredCharts();
+      setAccordionExpanded(appendix, true);
+    }
   }));
   if (window.location.hash) {
     const target = document.getElementById(window.location.hash.slice(1));
     if (target && (target === secondary || secondary.contains(target))) setAccordionExpanded(secondary, true);
+    if (target && target !== appendix && appendix.contains(target)) {
+      renderRecoveredCharts();
+      setAccordionExpanded(appendix, true);
+    }
   }
   secondary.querySelector(":scope > .accordion-toggle").addEventListener("click", event => {
     const toggle = event.currentTarget;
@@ -268,6 +311,936 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 }
 
+function readLayoutPreferences() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) || "{}");
+    const stableSectionId = id => {
+      if (typeof id !== "string") return id;
+      if (id.startsWith("archive:")) return `section:${id.slice("archive:".length)}`;
+      if (id.startsWith("core:") && !["core:secondaryAccordion", "core:technicalAppendix"].includes(id)) {
+        return `section:${id.slice("core:".length)}`;
+      }
+      return id;
+    };
+    const order = stored.order && typeof stored.order === "object"
+      ? Object.fromEntries(Object.entries(stored.order).map(([groupId, ids]) => [
+        groupId,
+        Array.isArray(ids) ? ids.map(stableSectionId) : [],
+      ]))
+      : {};
+    const hidden = stored.hidden && typeof stored.hidden === "object"
+      ? Object.fromEntries(Object.entries(stored.hidden).map(([id, value]) => [stableSectionId(id), value]))
+      : {};
+    const accordion = stored.accordion && typeof stored.accordion === "object"
+      ? Object.fromEntries(Object.entries(stored.accordion).map(([id, value]) => [stableSectionId(id), value]))
+      : {};
+    return {
+      order,
+      hidden,
+      accordion,
+    };
+  } catch (_) {
+    return { order: {}, hidden: {}, accordion: {} };
+  }
+}
+
+function saveLayoutPreferences() {
+  window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutState.preferences));
+}
+
+function layoutHeading(element) {
+  return element.querySelector(":scope > .section-heading h2")?.textContent?.trim()
+    || element.querySelector(":scope > summary strong")?.textContent?.trim()
+    || element.querySelector(":scope > summary")?.textContent?.trim()
+    || element.querySelector(":scope > h3")?.textContent?.trim()
+    || element.querySelector(":scope > .panel-kicker")?.textContent?.trim()
+    || element.id
+    || "Элемент интерфейса";
+}
+
+function makeLayoutItem(element, id, type, locked = false) {
+  return { element, id, type, locked, label: layoutHeading(element) };
+}
+
+function sectionLayoutItemId(element) {
+  return `section:${element.id}`;
+}
+
+function canConfigureAccordionPlacement(element) {
+  const main = document.querySelector("main.shell");
+  const accordion = document.getElementById("technicalAppendixContent");
+  return Boolean(
+    element?.matches("section[id]")
+    && !["secondaryAccordion", "technicalAppendix"].includes(element.id)
+    && (element.parentElement === main || element.parentElement === accordion)
+  );
+}
+
+function addSectionPlacementMetadata(item, element) {
+  item.canToggleAccordion = canConfigureAccordionPlacement(element);
+  item.inAccordion = element.parentElement === document.getElementById("technicalAppendixContent");
+  return item;
+}
+
+function captureDefaultSectionLayout() {
+  if (layoutState.sectionDefaults.placement.size) return;
+  const main = document.querySelector("main.shell");
+  const appendix = document.getElementById("technicalAppendix");
+  const accordion = document.getElementById("technicalAppendixContent");
+  if (!main || !appendix || !accordion) return;
+
+  const mainSections = [...main.children]
+    .filter(element => element.matches("section") && element !== appendix);
+  const accordionSections = [...accordion.children].filter(element => element.matches("section"));
+  layoutState.sectionDefaults.mainOrder = mainSections.map(element => element.id);
+  layoutState.sectionDefaults.accordionOrder = accordionSections.map(element => element.id);
+  [...mainSections, ...accordionSections].forEach(element => {
+    if (canConfigureAccordionPlacement(element)) {
+      layoutState.sectionDefaults.placement.set(
+        sectionLayoutItemId(element),
+        element.parentElement === accordion,
+      );
+    }
+  });
+}
+
+function placeSectionInAccordion(element, inAccordion) {
+  const main = document.querySelector("main.shell");
+  const appendix = document.getElementById("technicalAppendix");
+  const accordion = document.getElementById("technicalAppendixContent");
+  if (!element || !main || !appendix || !accordion) return;
+  if (inAccordion && element.parentElement !== accordion) accordion.appendChild(element);
+  if (!inAccordion && element.parentElement !== main) main.insertBefore(element, appendix);
+}
+
+function applySectionPlacementPreferences() {
+  layoutState.sectionDefaults.placement.forEach((defaultInAccordion, itemId) => {
+    const element = document.getElementById(itemId.slice("section:".length));
+    const stored = Object.prototype.hasOwnProperty.call(layoutState.preferences.accordion, itemId);
+    placeSectionInAccordion(
+      element,
+      stored ? Boolean(layoutState.preferences.accordion[itemId]) : defaultInAccordion,
+    );
+  });
+}
+
+function restoreDefaultSectionLayout() {
+  const main = document.querySelector("main.shell");
+  const appendix = document.getElementById("technicalAppendix");
+  const accordion = document.getElementById("technicalAppendixContent");
+  if (!main || !appendix || !accordion) return;
+  layoutState.sectionDefaults.mainOrder.forEach(id => {
+    const element = document.getElementById(id);
+    if (element) main.insertBefore(element, appendix);
+  });
+  layoutState.sectionDefaults.accordionOrder.forEach(id => {
+    const element = document.getElementById(id);
+    if (element) accordion.appendChild(element);
+  });
+}
+
+function collectCoreLayoutGroup() {
+  const container = document.querySelector("main.shell");
+  if (!container) return null;
+  const items = [...container.children]
+    .filter(element => element.matches("section[id]"))
+    .map(element => {
+      const movable = canConfigureAccordionPlacement(element);
+      const item = makeLayoutItem(
+        element,
+        movable ? sectionLayoutItemId(element) : `core:${element.id}`,
+        "Раздел страницы",
+        element.id === "technicalAppendix",
+      );
+      return addSectionPlacementMetadata(item, element);
+    });
+  const pageCount = items.filter(item => !item.locked).length;
+  return {
+    id: "core-sections",
+    label: "Основные разделы страницы",
+    description: `Пункты 01–${String(pageCount).padStart(2, "0")} и оболочка разделов ${archiveSectionRange()}`,
+    container,
+    items,
+    kind: "core",
+  };
+}
+
+function collectArchiveLayoutGroup() {
+  const container = document.getElementById("technicalAppendixContent");
+  if (!container) return null;
+  const items = [...container.children]
+    .filter(element => element.matches("section"))
+    .map(element => addSectionPlacementMetadata(
+      makeLayoutItem(element, sectionLayoutItemId(element), `Раздел ${archiveSectionRange()}`),
+      element,
+    ));
+  return {
+    id: "archive-sections",
+    label: `Разделы ${archiveSectionRange()}`,
+    description: "Аналитика, графики notebook и уникальные интерфейсы всей истории Git",
+    container,
+    items,
+    kind: "archive",
+  };
+}
+
+function collectInterfaceModuleLayoutGroups() {
+  return [...document.querySelectorAll("[data-layout-module-container]")].map((container, groupIndex) => {
+    const elements = [...container.children].filter(element => element.hasAttribute("data-layout-module"));
+    if (!elements.length) return null;
+    const groupId = container.dataset.layoutGroupId || `interface-modules-${groupIndex}`;
+    const items = elements.map((element, itemIndex) => {
+      const moduleId = element.dataset.layoutModule || `module-${itemIndex}`;
+      const item = makeLayoutItem(
+        element,
+        `module:${groupId}:${moduleId}`,
+        element.dataset.layoutType || "Интерфейс",
+      );
+      item.label = element.dataset.layoutLabel || item.label;
+      return item;
+    });
+    return {
+      id: `modules:${groupId}`,
+      label: container.dataset.layoutGroupLabel || "Интерфейсные модули",
+      description: container.dataset.layoutGroupDescription || `${items.length} отдельных блоков`,
+      container,
+      items,
+      kind: "modules",
+    };
+  }).filter(Boolean);
+}
+
+function collectRecoveredLayoutGroup() {
+  const container = document.querySelector("#recoveredCharts .recovered-accordion-list");
+  if (!container) return null;
+  const items = [...container.children].filter(element => element.matches("details")).map((element, index) => {
+    const anchor = element.querySelector("[id]")?.id || `group-${index}`;
+    return makeLayoutItem(element, `recovered:${anchor}`, "Группа графиков");
+  });
+  return {
+    id: "recovered-groups",
+    label: "Группы архивных графиков",
+    description: "Boxplot, распределения, гистограммы и функции принадлежности",
+    container,
+    items,
+    kind: "nested",
+  };
+}
+
+function collectMembershipLayoutGroup() {
+  const container = document.getElementById("archiveMembershipList");
+  if (!container || !container.children.length) return null;
+  const items = [...container.children].filter(element => element.matches(".archive-membership-index")).map((element, index) => (
+    makeLayoutItem(element, `membership-set:${element.dataset.membershipIndex ?? index}`, "Набор функций принадлежности")
+  ));
+  return {
+    id: "membership-sets",
+    label: "Наборы функций принадлежности",
+    description: "Восемь нечётких свёрток",
+    container,
+    items,
+    kind: "nested",
+  };
+}
+
+function chartGroupContext(container) {
+  const recovered = container.closest(".recovered-chart-group");
+  if (recovered) return recovered.querySelector(":scope > summary strong")?.textContent?.trim();
+  const membership = container.closest(".archive-membership-index");
+  if (membership) return membership.querySelector(":scope > summary")?.textContent?.trim();
+  const section = container.closest("section");
+  return section?.querySelector(":scope > .section-heading h2")?.textContent?.trim()
+    || container.className?.toString().split(/\s+/).filter(Boolean).join(" ")
+    || "Отдельные графики";
+}
+
+function collectChartLayoutGroups() {
+  const wrappersByContainer = new Map();
+  document.querySelectorAll(".plot[id]").forEach(plot => {
+    const wrapper = plot.closest("article, .panel");
+    if (!wrapper || wrapper.closest("#layoutManager")) return;
+    const container = wrapper.parentElement;
+    if (!container) return;
+    if (!wrappersByContainer.has(container)) wrappersByContainer.set(container, new Set());
+    wrappersByContainer.get(container).add(wrapper);
+  });
+
+  return [...wrappersByContainer.entries()].map(([container, wrapperSet]) => {
+    const wrappers = [...wrapperSet];
+    const items = wrappers.map(wrapper => {
+      const plotIds = [...wrapper.querySelectorAll(".plot[id]")].map(plot => plot.id).sort();
+      return makeLayoutItem(wrapper, `chart:${plotIds.join("+")}`, "График");
+    });
+    const allPlotIds = items.flatMap(item => item.id.slice("chart:".length).split("+")).filter(Boolean).sort();
+    return {
+      id: `charts:${allPlotIds[0] || "unknown"}`,
+      label: `Графики · ${chartGroupContext(container)}`,
+      description: `${items.length} ${items.length === 1 ? "блок" : "блоков"}`,
+      container,
+      items,
+      kind: "charts",
+    };
+  }).filter(group => group.items.length).sort((left, right) => left.label.localeCompare(right.label, "ru"));
+}
+
+function collectLayoutGroups() {
+  const fixedGroups = [
+    collectCoreLayoutGroup(),
+    collectArchiveLayoutGroup(),
+    collectRecoveredLayoutGroup(),
+    collectMembershipLayoutGroup(),
+  ].filter(Boolean);
+  return [...fixedGroups, ...collectInterfaceModuleLayoutGroups(), ...collectChartLayoutGroups()];
+}
+
+function normalizeLayoutOrder(group, requestedOrder) {
+  const byId = new Map(group.items.map(item => [item.id, item]));
+  const ordered = [];
+  (requestedOrder || []).forEach(id => {
+    if (byId.has(id) && !ordered.includes(byId.get(id))) ordered.push(byId.get(id));
+  });
+  group.items.forEach(item => {
+    if (!ordered.includes(item)) ordered.push(item);
+  });
+  if (group.kind === "core") {
+    return [...ordered.filter(item => !item.locked), ...ordered.filter(item => item.locked)];
+  }
+  return ordered;
+}
+
+function placeLayoutGroup(group, orderedItems) {
+  orderedItems.forEach(item => group.container.appendChild(item.element));
+  group.items = orderedItems;
+}
+
+function applyLayoutGroupPreferences(group) {
+  if (!layoutState.defaults.has(group.id)) {
+    layoutState.defaults.set(group.id, group.items.map(item => item.id));
+  }
+  const requested = layoutState.preferences.order[group.id] || layoutState.defaults.get(group.id);
+  const orderedItems = normalizeLayoutOrder(group, requested);
+  placeLayoutGroup(group, orderedItems);
+  orderedItems.forEach(item => {
+    item.element.classList.toggle("layout-item-hidden", Boolean(layoutState.preferences.hidden[item.id]));
+  });
+}
+
+function setSectionNumber(element, value) {
+  const badge = element.querySelector(":scope > .section-heading .section-index");
+  if (badge) badge.textContent = value;
+}
+
+function archiveSectionStart() {
+  const main = document.querySelector("main.shell");
+  const appendix = document.getElementById("technicalAppendix");
+  const pageCount = main
+    ? [...main.children].filter(element => element.matches("section") && element !== appendix).length
+    : 4;
+  return pageCount + 1;
+}
+
+function layoutDisplayNumber(group, item, index) {
+  if (group.kind === "core") return item.locked ? archiveSectionRange() : String(index + 1).padStart(2, "0");
+  if (group.kind === "archive") return String(index + archiveSectionStart()).padStart(2, "0");
+  return String(index + 1).padStart(2, "0");
+}
+
+function renumberInterfaceSections() {
+  const core = layoutState.groups.get("core-sections");
+  core?.items.forEach((item, index) => {
+    const number = layoutDisplayNumber(core, item, index);
+    setSectionNumber(item.element, number);
+  });
+  const archive = layoutState.groups.get("archive-sections");
+  archive?.items.forEach((item, index) => (
+    setSectionNumber(item.element, String(index + archiveSectionStart()).padStart(2, "0"))
+  ));
+  const appendix = document.getElementById("technicalAppendix");
+  if (appendix && archive?.items.length) {
+    setSectionNumber(appendix, archiveSectionRange());
+    const toggle = appendix.querySelector(":scope > .accordion-toggle");
+    const action = toggle?.querySelector(".accordion-action");
+    if (action) {
+      action.textContent = toggle.getAttribute("aria-expanded") === "true"
+        ? `Свернуть разделы ${archiveSectionRange()}`
+        : `Развернуть разделы ${archiveSectionRange()}`;
+    }
+  }
+}
+
+function layoutGroupOpenState() {
+  return new Set([...document.querySelectorAll("#layoutManagerGroups .layout-manager-group[open]")]
+    .map(group => group.dataset.layoutGroup));
+}
+
+function renderLayoutManagerGroups() {
+  const root = document.getElementById("layoutManagerGroups");
+  if (!root) return;
+  const opened = layoutGroupOpenState();
+  const firstRender = root.dataset.rendered !== "true";
+  const groups = [...layoutState.groups.values()];
+  root.innerHTML = groups.length ? groups.map(group => {
+    const shouldOpen = firstRender
+      ? ["core-sections", "archive-sections"].includes(group.id)
+      : opened.has(group.id);
+    const rows = group.items.map((item, index) => {
+      const visible = !layoutState.preferences.hidden[item.id];
+      const previous = group.items[index - 1];
+      const next = group.items[index + 1];
+      const canMoveUp = !item.locked && index > 0 && !previous?.locked;
+      const canMoveDown = !item.locked && index < group.items.length - 1 && !next?.locked;
+      const accordionControl = item.canToggleAccordion
+        ? `<label class="layout-accordion-placement" title="Размещать раздел внутри нижней гармошки">
+            <input type="checkbox" data-layout-accordion${item.inAccordion ? " checked" : ""}
+                   aria-label="В гармошке: ${escapeHtml(item.label)}">
+            <span>В гармошке</span>
+          </label>`
+        : "";
+      return `
+        <li class="layout-manager-row${visible ? "" : " layout-row-hidden"}"
+            data-layout-item="${escapeHtml(item.id)}"
+            data-layout-search="${escapeHtml(`${item.label} ${item.type}`.toLowerCase())}"
+            draggable="${item.locked ? "false" : "true"}">
+          <span class="layout-drag-handle" aria-hidden="true">${item.locked ? "•" : "⠿"}</span>
+          <span class="layout-order-number">${layoutDisplayNumber(group, item, index)}</span>
+          <span class="layout-item-copy">
+            <strong title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</strong>
+            <small>${escapeHtml(item.type)}</small>
+            ${accordionControl}
+          </span>
+          <label class="layout-visibility" title="${visible ? "Скрыть" : "Показать"}">
+            <input type="checkbox" data-layout-visible ${visible ? "checked" : ""} aria-label="Показывать: ${escapeHtml(item.label)}">
+            <span aria-hidden="true"></span>
+          </label>
+          <span class="layout-move-buttons">
+            <button type="button" data-layout-move="-1" aria-label="Поднять: ${escapeHtml(item.label)}"${canMoveUp ? "" : " disabled"}>↑</button>
+            <button type="button" data-layout-move="1" aria-label="Опустить: ${escapeHtml(item.label)}"${canMoveDown ? "" : " disabled"}>↓</button>
+          </span>
+        </li>`;
+    }).join("");
+    return `
+      <details class="layout-manager-group" data-layout-group="${escapeHtml(group.id)}"${shouldOpen ? " open" : ""}>
+        <summary>
+          <span><strong>${escapeHtml(group.label)}</strong><small>${escapeHtml(group.description)}</small></span>
+          <b aria-hidden="true">⌄</b>
+        </summary>
+        <ol class="layout-manager-list" data-layout-list="${escapeHtml(group.id)}">${rows}</ol>
+      </details>`;
+  }).join("") : '<p class="layout-manager-empty">Элементы интерфейса пока не найдены.</p>';
+  root.dataset.rendered = "true";
+  filterLayoutManager();
+}
+
+function refreshLayoutManager() {
+  if (!layoutState.initialized) return;
+  const groups = collectLayoutGroups();
+  layoutState.groups = new Map(groups.map(group => [group.id, group]));
+  groups.forEach(applyLayoutGroupPreferences);
+  renumberInterfaceSections();
+  renderLayoutManagerGroups();
+}
+
+function findLayoutItem(groupId, itemId) {
+  return layoutState.groups.get(groupId)?.items.find(item => item.id === itemId);
+}
+
+function updateLayoutListControls(list, group) {
+  [...list.querySelectorAll(".layout-manager-row")].forEach((row, index, rows) => {
+    const item = findLayoutItem(group.id, row.dataset.layoutItem);
+    row.querySelector(".layout-order-number").textContent = layoutDisplayNumber(group, item, index);
+    const up = row.querySelector('[data-layout-move="-1"]');
+    const down = row.querySelector('[data-layout-move="1"]');
+    up.disabled = Boolean(item?.locked || index === 0 || findLayoutItem(group.id, rows[index - 1]?.dataset.layoutItem)?.locked);
+    down.disabled = Boolean(item?.locked || index === rows.length - 1 || findLayoutItem(group.id, rows[index + 1]?.dataset.layoutItem)?.locked);
+  });
+}
+
+function applyLayoutOrderFromList(list) {
+  const groupId = list.dataset.layoutList;
+  const group = layoutState.groups.get(groupId);
+  if (!group) return;
+  const requested = [...list.querySelectorAll(".layout-manager-row")].map(row => row.dataset.layoutItem);
+  const ordered = normalizeLayoutOrder(group, requested);
+  placeLayoutGroup(group, ordered);
+  layoutState.preferences.order[groupId] = ordered.map(item => item.id);
+  saveLayoutPreferences();
+  renumberInterfaceSections();
+  if (group.kind === "core" && ordered.at(-1)?.locked) {
+    list.appendChild(list.querySelector(`[data-layout-item="${ordered.at(-1).id}"]`));
+  }
+  updateLayoutListControls(list, group);
+  resizeSectionVisuals(group.container);
+}
+
+function filterLayoutManager() {
+  const search = document.getElementById("layoutManagerSearch");
+  const root = document.getElementById("layoutManagerGroups");
+  if (!search || !root) return;
+  const query = search.value.trim().toLowerCase();
+  root.querySelectorAll(".layout-manager-group").forEach(group => {
+    const groupMatches = group.querySelector("summary")?.textContent?.toLowerCase().includes(query);
+    let visibleRows = 0;
+    group.querySelectorAll(".layout-manager-row").forEach(row => {
+      const matches = !query || groupMatches || row.dataset.layoutSearch.includes(query);
+      row.hidden = !matches;
+      if (matches) visibleRows += 1;
+    });
+    group.hidden = Boolean(query && !visibleRows);
+    if (query && visibleRows) group.open = true;
+  });
+}
+
+function moveLayoutRow(button) {
+  const row = button.closest(".layout-manager-row");
+  const list = row?.closest(".layout-manager-list");
+  if (!row || !list) return;
+  const direction = Number(button.dataset.layoutMove);
+  const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (!sibling || sibling.getAttribute("draggable") === "false") return;
+  if (direction < 0) list.insertBefore(row, sibling);
+  else list.insertBefore(sibling, row);
+  applyLayoutOrderFromList(list);
+}
+
+function setSectionAccordionPlacement(item, inAccordion) {
+  if (!item?.canToggleAccordion) return;
+  const defaultPlacement = layoutState.sectionDefaults.placement.get(item.id);
+  if (inAccordion === defaultPlacement) delete layoutState.preferences.accordion[item.id];
+  else layoutState.preferences.accordion[item.id] = inAccordion;
+
+  Object.keys(layoutState.preferences.order).forEach(groupId => {
+    layoutState.preferences.order[groupId] = layoutState.preferences.order[groupId]
+      .filter(id => id !== item.id);
+  });
+  const targetGroupId = inAccordion ? "archive-sections" : "core-sections";
+  const targetItems = layoutState.groups.get(targetGroupId)?.items || [];
+  const targetOrder = targetItems.filter(target => !target.locked).map(target => target.id);
+  targetOrder.push(item.id);
+  targetItems.filter(target => target.locked).forEach(target => targetOrder.push(target.id));
+  layoutState.preferences.order[targetGroupId] = targetOrder;
+
+  placeSectionInAccordion(item.element, inAccordion);
+  saveLayoutPreferences();
+  refreshLayoutManager();
+  const appendix = document.getElementById("technicalAppendix");
+  if (!inAccordion || appendix?.classList.contains("accordion-expanded")) {
+    resizeSectionVisuals(item.element);
+  }
+  showToast(inAccordion
+    ? `«${item.label}» перенесён в гармошку`
+    : `«${item.label}» вынесен на основную страницу`);
+}
+
+function resetInterfaceLayout() {
+  layoutState.preferences = { order: {}, hidden: {}, accordion: {} };
+  window.localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  layoutState.groups.forEach(group => {
+    if (["core-sections", "archive-sections"].includes(group.id)) return;
+    const ordered = normalizeLayoutOrder(group, layoutState.defaults.get(group.id));
+    placeLayoutGroup(group, ordered);
+    ordered.forEach(item => item.element.classList.remove("layout-item-hidden"));
+  });
+  restoreDefaultSectionLayout();
+  document.querySelectorAll(".layout-item-hidden").forEach(element => element.classList.remove("layout-item-hidden"));
+  layoutState.defaults.delete("core-sections");
+  layoutState.defaults.delete("archive-sections");
+  renumberInterfaceSections();
+  refreshLayoutManager();
+  showToast("Порядок, видимость и состав гармошки сброшены");
+}
+
+function openLayoutManager() {
+  layoutState.returnFocus = document.activeElement;
+  refreshLayoutManager();
+  document.getElementById("layoutManager").hidden = false;
+  document.getElementById("layoutManagerBackdrop").hidden = false;
+  document.getElementById("layoutManagerToggle").setAttribute("aria-expanded", "true");
+  document.body.classList.add("layout-manager-open");
+  window.requestAnimationFrame(() => document.getElementById("layoutManagerSearch").focus());
+}
+
+function closeLayoutManager() {
+  document.getElementById("layoutManager").hidden = true;
+  document.getElementById("layoutManagerBackdrop").hidden = true;
+  document.getElementById("layoutManagerToggle").setAttribute("aria-expanded", "false");
+  document.body.classList.remove("layout-manager-open");
+  const returnTarget = layoutState.returnFocus?.isConnected
+    ? layoutState.returnFocus
+    : document.getElementById("layoutManagerToggle");
+  returnTarget?.focus();
+  layoutState.returnFocus = null;
+}
+
+function initializeLayoutManager() {
+  if (layoutState.initialized) return;
+  layoutState.preferences = readLayoutPreferences();
+  captureDefaultSectionLayout();
+  applySectionPlacementPreferences();
+  layoutState.initialized = true;
+  const root = document.getElementById("layoutManagerGroups");
+  document.getElementById("layoutManagerToggle").addEventListener("click", openLayoutManager);
+  document.getElementById("layoutManagerClose").addEventListener("click", closeLayoutManager);
+  document.getElementById("layoutManagerBackdrop").addEventListener("click", closeLayoutManager);
+  document.getElementById("layoutManagerReset").addEventListener("click", resetInterfaceLayout);
+  document.getElementById("layoutManagerSearch").addEventListener("input", filterLayoutManager);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !document.getElementById("layoutManager").hidden) closeLayoutManager();
+  });
+  root.addEventListener("change", event => {
+    const accordionCheckbox = event.target.closest("[data-layout-accordion]");
+    if (accordionCheckbox) {
+      const row = accordionCheckbox.closest(".layout-manager-row");
+      const group = row?.closest(".layout-manager-group");
+      const item = findLayoutItem(group?.dataset.layoutGroup, row?.dataset.layoutItem);
+      setSectionAccordionPlacement(item, accordionCheckbox.checked);
+      return;
+    }
+    const checkbox = event.target.closest("[data-layout-visible]");
+    if (!checkbox) return;
+    const row = checkbox.closest(".layout-manager-row");
+    const group = row.closest(".layout-manager-group");
+    const item = findLayoutItem(group.dataset.layoutGroup, row.dataset.layoutItem);
+    if (!item) return;
+    const hidden = !checkbox.checked;
+    item.element.classList.toggle("layout-item-hidden", hidden);
+    row.classList.toggle("layout-row-hidden", hidden);
+    checkbox.closest(".layout-visibility").title = hidden ? "Показать" : "Скрыть";
+    if (hidden) layoutState.preferences.hidden[item.id] = true;
+    else delete layoutState.preferences.hidden[item.id];
+    saveLayoutPreferences();
+    if (!hidden) resizeSectionVisuals(item.element);
+  });
+  root.addEventListener("click", event => {
+    const moveButton = event.target.closest("[data-layout-move]");
+    if (moveButton) moveLayoutRow(moveButton);
+  });
+  root.addEventListener("dragstart", event => {
+    const row = event.target.closest(".layout-manager-row");
+    if (!row || row.getAttribute("draggable") === "false") {
+      event.preventDefault();
+      return;
+    }
+    layoutState.draggedRow = row;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.dataset.layoutItem);
+    window.requestAnimationFrame(() => row.classList.add("dragging"));
+  });
+  root.addEventListener("dragover", event => {
+    const list = event.target.closest(".layout-manager-list");
+    const dragged = layoutState.draggedRow;
+    if (!list || !dragged || dragged.parentElement !== list) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rows = [...list.querySelectorAll('.layout-manager-row:not(.dragging):not([draggable="false"])')];
+    const after = rows.find(row => event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2);
+    const locked = list.querySelector('.layout-manager-row[draggable="false"]');
+    if (after) list.insertBefore(dragged, after);
+    else list.insertBefore(dragged, locked || null);
+  });
+  root.addEventListener("drop", event => {
+    const list = event.target.closest(".layout-manager-list");
+    if (!list || !layoutState.draggedRow || layoutState.draggedRow.parentElement !== list) return;
+    event.preventDefault();
+    applyLayoutOrderFromList(list);
+  });
+  root.addEventListener("dragend", () => {
+    layoutState.draggedRow?.classList.remove("dragging");
+    layoutState.draggedRow = null;
+  });
+  refreshLayoutManager();
+  const hashTarget = window.location.hash
+    ? document.getElementById(window.location.hash.slice(1))
+    : null;
+  const appendix = document.getElementById("technicalAppendix");
+  if (hashTarget && hashTarget !== appendix && appendix?.contains(hashTarget)) {
+    renderRecoveredCharts();
+    setAccordionExpanded(appendix, true);
+  }
+}
+
+const legacyRoleModes = {
+  observer: {
+    topbar: "Режим наблюдателя",
+    badge: "Только просмотр",
+    eyebrow: "Режим наблюдателя",
+    title: "Доступные транспортные<br><em>сценарии и результаты</em>",
+    copy: "Выберите готовый сценарий, изучите ожидаемый эффект и объяснение. Редактирование данных и воздействий отключено.",
+    permissions: [["Результаты", true], ["Готовые сценарии", true], ["Изменение данных", false], ["Администрирование", false]],
+  },
+  user: {
+    topbar: "Рабочее место пользователя",
+    badge: "Редактирование",
+    eyebrow: "Режим пользователя",
+    title: "Сценарная лаборатория<br><em>и собственные решения</em>",
+    copy: "Пользователь меняет воздействия, сохраняет JSON, дополняет XLSX и сравнивает варианты с инерционным прогнозом.",
+    permissions: [["Результаты", true], ["Сохранение сценариев", true], ["Изменение данных", true], ["Администрирование", false]],
+  },
+  admin: {
+    topbar: "Панель администратора",
+    badge: "Полный доступ",
+    eyebrow: "Режим администратора",
+    title: "Данные, сценарии<br><em>и контроль доступа</em>",
+    copy: "Администратор управляет всей демонстрацией: моделями, источниками данных, ролями пользователей и журналом действий.",
+    permissions: [["Результаты", true], ["Изменение данных", true], ["Пользователи", true], ["Аудит", true]],
+  },
+};
+
+function setLegacyRoleMode(role) {
+  const mode = legacyRoleModes[role] || legacyRoleModes.observer;
+  const dashboard = document.getElementById("legacyRoleDashboard");
+  if (!dashboard) return;
+  dashboard.dataset.role = role;
+  document.getElementById("legacyRoleTopbarLabel").textContent = mode.topbar;
+  document.getElementById("legacyRoleBadge").textContent = mode.badge;
+  document.getElementById("legacyRoleEyebrow").textContent = mode.eyebrow;
+  document.getElementById("legacyRoleTitle").innerHTML = mode.title;
+  document.getElementById("legacyRoleCopy").textContent = mode.copy;
+  document.getElementById("legacyRolePermissions").innerHTML = mode.permissions.map(([label, allowed]) =>
+    `<div><span>${escapeHtml(label)}</span><b>${allowed ? "доступно" : "закрыто"}</b></div>`).join("");
+  document.querySelectorAll("[data-legacy-role]").forEach(button => {
+    const active = button.dataset.legacyRole === role;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function addLegacyAudit(action, actor = "admin.smolensk") {
+  const list = document.getElementById("legacyAuditList");
+  if (!list) return;
+  const row = document.createElement("div");
+  row.className = "audit-row";
+  const time = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  row.innerHTML = `<time>сегодня · ${escapeHtml(time)}</time><strong>${escapeHtml(action)}</strong><span>${escapeHtml(actor)}</span>`;
+  list.prepend(row);
+}
+
+function legacyContributionRows(items, valueAccessor = item => item.value) {
+  if (!items?.length) return '<p class="chart-description">Нет доступных значений.</p>';
+  const values = items.map(item => Math.abs(Number(valueAccessor(item)) || 0));
+  const maximum = Math.max(...values, 0.001);
+  return items.map((item, index) => {
+    const value = Number(valueAccessor(item)) || 0;
+    const display = Math.abs(value) <= 1 && items.some(entry => "weight" in entry)
+      ? `${formatNumber(value * 100, 1)}%`
+      : formatNumber(value, 3);
+    return `<div class="contribution-row" title="${escapeHtml(item.label)}">
+      <span>${escapeHtml(item.label)}</span>
+      <div class="contribution-track"><div class="contribution-fill" style="width:${values[index] / maximum * 100}%"></div></div>
+      <strong>${display}</strong>
+    </div>`;
+  }).join("");
+}
+
+function renderLegacyExpertInterfaces() {
+  const cards = document.getElementById("legacyExpertIndexCards");
+  if (!cards || !state.indices) return;
+  const latestHierarchical = Number(state.indices.hierarchical?.at(-1));
+  cards.innerHTML = `
+    <article class="panel expert-index-card archived">
+      <div><span class="panel-kicker">31 исходный показатель</span><small>Линейный индекс Гульдар · исторический baseline</small></div>
+      <strong>архив</strong>
+    </article>
+    <article class="panel expert-index-card">
+      <div><span class="panel-kicker">8 нечётких индексов</span><small>Иерархический индекс Гульдар · доступный расчёт</small></div>
+      <strong>${Number.isFinite(latestHierarchical) ? formatNumber(latestHierarchical) : "—"}</strong>
+    </article>`;
+  const linear = document.getElementById("legacyLinearContributions");
+  const hierarchical = document.getElementById("legacyHierarchicalContributions");
+  if (linear) linear.innerHTML = legacyContributionRows(state.analysis?.linear_weights || [], item => item.weight);
+  if (hierarchical) hierarchical.innerHTML = legacyContributionRows(state.indices.hierarchical_contributions || []);
+}
+
+function renderLegacyRecommendations() {
+  const data = state.improvementRecommendations;
+  const select = document.getElementById("legacyRecommendationObjective");
+  if (!data || !select) return;
+  const previous = select.value || document.getElementById("customerObjective")?.value || "traffic_safety";
+  fillSelect(select, data.objectives);
+  select.value = data.objectives.some(item => item.id === previous) ? previous : data.objectives[0].id;
+  const objective = data.objectives.find(item => item.id === select.value) || data.objectives[0];
+  const interpretation = interpretQualityIndex(Number(objective.current));
+  document.getElementById("legacyRecommendationStatus").innerHTML =
+    `<strong>${escapeHtml(objective.label)}: ${formatNumber(objective.current, 2)} из 100</strong>
+     <span>${escapeHtml(objective.status || interpretation.category)} · данные за ${escapeHtml(data.period)}</span>`;
+  document.getElementById("legacyRecommendationList").innerHTML = objective.items.map(item => {
+    const effect = item.expected_effect_points == null
+      ? "Прямой показатель канонических JSON-правил"
+      : `Модельный ориентир: ${signed(item.expected_effect_points, 3)} п.п. при стандартном воздействии`;
+    return `<li><span class="recommendation-rank">${item.rank}</span><div>
+      <strong>${escapeHtml(item.label)}</strong>
+      <p>${escapeHtml(item.action)}</p>
+      <small>${escapeHtml(item.relation)} · ${escapeHtml(effect)}</small>
+    </div></li>`;
+  }).join("");
+  document.getElementById("legacyRecommendationMethodology").textContent = data.methodology_note;
+}
+
+function syncLegacyScenarioWorkbench() {
+  if (!state.scenarios?.length) return;
+  const originalPreset = document.getElementById("scenarioPreset");
+  const legacyPreset = document.getElementById("legacyScenarioPreset");
+  if (!originalPreset || !legacyPreset) return;
+  legacyPreset.value = originalPreset.value;
+  const scenario = scenarioByReference(originalPreset.value);
+  document.getElementById("legacyScenarioDescription").textContent = scenario?.description || "Описание сценария недоступно.";
+  document.getElementById("legacyScenarioMode").value = document.getElementById("scenarioMode").value;
+  document.getElementById("legacyScenarioHorizon").value = document.getElementById("scenarioHorizon").value;
+  document.getElementById("legacyWorkbenchOwner").textContent = scenario?.builtin
+    ? "Встроенный сценарий · доступен всем ролям"
+    : "Пользовательский JSON · можно сохранить и выгрузить";
+  document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => {
+    const mirror = document.querySelector(`#legacyScenarioSliders input[data-index="${input.dataset.index}"]`);
+    if (!mirror) return;
+    mirror.value = input.value;
+    const value = document.getElementById(`legacy-value-${input.dataset.index}`);
+    if (value) value.textContent = formatNumber(Number(input.value), 1);
+  });
+  const horizon = Number(document.getElementById("scenarioHorizon").value);
+  const horizonWord = horizon % 10 === 1 && horizon % 100 !== 11
+    ? "квартал"
+    : (horizon % 10 >= 2 && horizon % 10 <= 4 && (horizon % 100 < 12 || horizon % 100 > 14) ? "квартала" : "кварталов");
+  document.getElementById("legacyWorkbenchSync").textContent =
+    `Синхронизировано · ${scenario?.label || "сценарий"} · ${horizon} ${horizonWord}`;
+}
+
+function renderLegacyScenarioWorkbench() {
+  const select = document.getElementById("legacyScenarioPreset");
+  const original = document.getElementById("scenarioPreset");
+  const sliderRoot = document.getElementById("legacyScenarioSliders");
+  if (!select || !original || !sliderRoot || !state.scenarios?.length) return;
+  select.innerHTML = [...original.options].map(option =>
+    `<option value="${escapeHtml(option.value)}">${escapeHtml(option.textContent)}</option>`).join("");
+  sliderRoot.innerHTML = indexControls.map(([id, label, description]) => {
+    const source = document.querySelector(`#scenarioSliders input[data-index="${id}"]`);
+    const value = Number(source?.value ?? state.baseIndexValues[id] ?? 0);
+    return `<div class="slider-item">
+      <div class="slider-meta">
+        <span>${escapeHtml(label)}<small class="slider-description">${escapeHtml(description)}</small></span>
+        <span id="legacy-value-${id}" class="slider-value">${formatNumber(value, 1)}</span>
+      </div>
+      <input type="range" min="0" max="100" step="0.1" value="${value}" data-index="${id}" aria-label="${escapeHtml(label)}: от 0 до 100">
+    </div>`;
+  }).join("");
+  syncLegacyScenarioWorkbench();
+}
+
+function initializeLegacyInterfaces() {
+  document.getElementById("legacyLoginForm")?.addEventListener("submit", event => {
+    event.preventDefault();
+    const username = document.getElementById("legacyLoginUsername").value.trim() || "demo";
+    const status = document.getElementById("legacyLoginStatus");
+    status.classList.add("success");
+    status.textContent = `Демо-вход выполнен: ${username}. Серверные аккаунты не изменены.`;
+    document.getElementById("legacyCurrentUserName").textContent = username;
+    showToast("Архивный экран входа проверен локально");
+  });
+  document.getElementById("legacyChangePassword")?.addEventListener("click", () =>
+    showToast("Архивный диалог смены пароля: серверный пароль не изменён"));
+  document.getElementById("legacyLogout")?.addEventListener("click", () => {
+    document.getElementById("legacyLoginStatus").classList.remove("success");
+    document.getElementById("legacyLoginStatus").textContent = "Демо-сессия завершена.";
+    showToast("Архивная демо-сессия завершена");
+  });
+
+  document.querySelector(".legacy-role-switcher")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-legacy-role]");
+    if (button) setLegacyRoleMode(button.dataset.legacyRole);
+  });
+  setLegacyRoleMode("observer");
+
+  document.getElementById("legacyCreateUserForm")?.addEventListener("submit", event => {
+    event.preventDefault();
+    const username = document.getElementById("legacyNewUsername").value.trim();
+    const displayName = document.getElementById("legacyNewDisplayName").value.trim();
+    const roleSelect = document.getElementById("legacyNewRole");
+    const role = roleSelect.options[roleSelect.selectedIndex].textContent;
+    const body = document.getElementById("legacyUsersBody");
+    body.insertAdjacentHTML("beforeend", `<tr>
+      <td><strong>${escapeHtml(displayName)}</strong><span class="table-subline">${escapeHtml(username)}</span></td>
+      <td><select aria-label="Роль ${escapeHtml(displayName)}"><option>${escapeHtml(role)}</option><option>Наблюдатель</option><option>Пользователь</option><option>Администратор</option></select></td>
+      <td><input type="checkbox" checked aria-label="Аккаунт активен"></td>
+      <td><button class="mini-button" type="button" data-legacy-admin-action="reset">Сбросить пароль</button></td>
+    </tr>`);
+    addLegacyAudit(`Создан локальный демо-пользователь ${username}`);
+    event.currentTarget.reset();
+    showToast("Пользователь добавлен только в архивный макет");
+  });
+  document.getElementById("legacyUsersBody")?.addEventListener("click", event => {
+    if (!event.target.closest("[data-legacy-admin-action]")) return;
+    const username = event.target.closest("tr")?.querySelector(".table-subline")?.textContent || "пользователь";
+    addLegacyAudit(`Запрошен сброс пароля: ${username}`);
+    showToast("Демо-запрос добавлен в журнал");
+  });
+  document.getElementById("legacyUsersBody")?.addEventListener("change", event => {
+    const username = event.target.closest("tr")?.querySelector(".table-subline")?.textContent || "пользователь";
+    addLegacyAudit(`Изменены параметры доступа: ${username}`);
+  });
+
+  document.getElementById("legacySharedScenario")?.addEventListener("change", event => {
+    const owners = {
+      priority: "analyst.demo", digital: "admin.smolensk", reallocation: "transport.team",
+    };
+    document.getElementById("legacyScenarioOwner").textContent =
+      `Владелец: ${owners[event.target.value] || "analyst.demo"} · можно редактировать`;
+    document.getElementById("legacySharedScenarioStatus").textContent = "Выбран другой архивный сценарий.";
+  });
+  document.getElementById("legacySaveSharedScenario")?.addEventListener("click", () => {
+    document.getElementById("legacySharedScenarioStatus").textContent = "Локальная копия JSON сохранена в макете.";
+    showToast("Архивный сценарий сохранён локально");
+  });
+  document.getElementById("legacyExportSharedScenario")?.addEventListener("click", () =>
+    showToast("Экспорт показан как исторический интерфейс; текущий JSON доступен в полном пульте"));
+  document.getElementById("legacyDeleteSharedScenario")?.addEventListener("click", () => {
+    document.getElementById("legacySharedScenarioStatus").textContent = "Удаление смоделировано; серверные данные не затронуты.";
+    showToast("Архивный макет не удаляет реальные сценарии");
+  });
+  document.getElementById("legacySaveScenarioShares")?.addEventListener("click", () => {
+    const checked = document.querySelectorAll("#legacyObserverShareList input:checked").length;
+    document.getElementById("legacyShareStatus").textContent =
+      checked ? `Доступ открыт: ${checked} наблюдателям.` : "Сценарий доступен только владельцу.";
+    addLegacyAudit(`Изменён доступ к сценарию: ${checked} наблюдателей`);
+    showToast("Матрица доступа обновлена в локальном макете");
+  });
+
+  document.getElementById("legacyScenarioPreset")?.addEventListener("change", event => {
+    const target = document.getElementById("scenarioPreset");
+    target.value = event.target.value;
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  document.getElementById("legacyScenarioMode")?.addEventListener("change", event => {
+    const target = document.getElementById("scenarioMode");
+    target.value = event.target.value;
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  document.getElementById("legacyScenarioHorizon")?.addEventListener("change", event => {
+    const target = document.getElementById("scenarioHorizon");
+    target.value = event.target.value;
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  document.getElementById("legacyScenarioSaveName")?.addEventListener("input", event => {
+    document.getElementById("scenarioSaveName").value = event.target.value;
+  });
+  document.getElementById("legacyScenarioSliders")?.addEventListener("input", event => {
+    const input = event.target.closest("input[data-index]");
+    if (!input) return;
+    const target = document.querySelector(`#scenarioSliders input[data-index="${input.dataset.index}"]`);
+    if (!target) return;
+    target.value = input.value;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    syncLegacyScenarioWorkbench();
+  });
+  document.getElementById("legacyResetSliders")?.addEventListener("click", () => document.getElementById("resetSliders")?.click());
+  document.getElementById("legacyRunScenario")?.addEventListener("click", () => document.getElementById("runScenario")?.click());
+  document.getElementById("legacySaveScenario")?.addEventListener("click", () => document.getElementById("saveScenario")?.click());
+  document.getElementById("legacyExportScenario")?.addEventListener("click", () => document.getElementById("exportScenario")?.click());
+  document.getElementById("legacyUploadScenario")?.addEventListener("click", () => document.getElementById("scenarioFile")?.click());
+  document.getElementById("legacyRecommendationObjective")?.addEventListener("change", renderLegacyRecommendations);
+  document.getElementById("legacyBudgetObjective")?.addEventListener("change", renderBudgetAnalysis);
+  document.getElementById("scenarioFile")?.addEventListener("change", event => {
+    if (event.target.files?.length) document.getElementById("uploadScenario")?.click();
+  });
+}
+
 function fillSelect(select, items, valueKey = "id", labelKey = "label") {
   select.innerHTML = "";
   items.forEach(item => {
@@ -284,6 +1257,9 @@ function renderOverview() {
   document.getElementById("nodeCount").textContent = state.metadata.fcm.nodes;
   document.getElementById("edgeCount").textContent = state.metadata.fcm.edges;
   document.getElementById("scenarioCount").textContent = state.scenarios.filter(item => item.builtin).length;
+  document.getElementById("legacyNodeCount").textContent = state.metadata.fcm.nodes;
+  document.getElementById("legacyEdgeCount").textContent = state.metadata.fcm.edges;
+  document.getElementById("legacyScenarioCount").textContent = state.scenarios.filter(item => item.builtin).length;
   const cards = [
     { label: "Безопасность", value: latest.traffic_safety, unit: "из 100", color: colors.coral },
     { label: "Рейсы по расписанию", value: latest.regularity, unit: "%", color: colors.teal },
@@ -712,6 +1688,15 @@ function renderNotebookPlots() {
   }, plotConfig);
 
   const test = target.predictions.test;
+  Plotly.react("notebookTestAnfisPlot", [
+    { x: test.map(row => row.period), y: test.map(row => row.actual), name: "Факт (target, норм.)", type: "scatter", mode: "lines+markers", line: { color: colors.ink, width: 2 } },
+    { x: test.map(row => row.period), y: test.map(row => row.anfis), name: "Прогноз ANFIS", type: "scatter", mode: "lines+markers", line: { color: colors.teal, width: 2, dash: "dash" } },
+  ], {
+    ...baseLayout, margin: { l: 52, r: 18, t: 26, b: 54 },
+    xaxis: { ...baseLayout.xaxis, title: "Test 2023–2025", tickangle: -45 },
+    yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
+  }, plotConfig);
+
   const modelStyles = {
     seasonal_naive: { color: colors.muted, dash: "dot" },
     ridge: { color: colors.blue, dash: "dash" },
@@ -730,6 +1715,258 @@ function renderNotebookPlots() {
     xaxis: { ...baseLayout.xaxis, title: "Test 2023–2025", tickangle: -45 },
     yaxis: { ...baseLayout.yaxis, title: "target (норм.)" },
   }, plotConfig);
+}
+
+function mean(values) {
+  return values.reduce((sum, value) => sum + Number(value), 0) / Math.max(values.length, 1);
+}
+
+function median(values) {
+  const sorted = values.map(Number).sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function pearson(left, right) {
+  const length = Math.min(left.length, right.length);
+  if (!length) return 0;
+  const x = left.slice(0, length).map(Number);
+  const y = right.slice(0, length).map(Number);
+  const xMean = mean(x);
+  const yMean = mean(y);
+  let numerator = 0;
+  let xScale = 0;
+  let yScale = 0;
+  for (let index = 0; index < length; index += 1) {
+    const xDelta = x[index] - xMean;
+    const yDelta = y[index] - yMean;
+    numerator += xDelta * yDelta;
+    xScale += xDelta ** 2;
+    yScale += yDelta ** 2;
+  }
+  const denominator = Math.sqrt(xScale * yScale);
+  return denominator > 1e-12 ? numerator / denominator : 0;
+}
+
+function standardized(values) {
+  const numeric = values.map(Number);
+  const center = mean(numeric);
+  const variance = mean(numeric.map(value => (value - center) ** 2));
+  const scale = Math.sqrt(variance) || 1;
+  return numeric.map(value => (value - center) / scale);
+}
+
+function kde(values, points = 100) {
+  const numeric = standardized(values);
+  const bandwidth = Math.max(0.18, 1.06 * Math.pow(Math.max(numeric.length, 2), -0.2));
+  const x = Array.from({ length: points }, (_, index) => -3.5 + (7 * index) / (points - 1));
+  const normalizer = numeric.length * bandwidth * Math.sqrt(2 * Math.PI);
+  const y = x.map(point => numeric.reduce(
+    (sum, value) => sum + Math.exp(-0.5 * ((point - value) / bandwidth) ** 2),
+    0,
+  ) / normalizer);
+  return { x, y };
+}
+
+function archiveBoxplotDefinitions() {
+  const items = state.analysis.boxplots;
+  const byGroup = group => items.filter(item => item.group === group);
+  const accessible = byGroup("Доступная среда");
+  const logIds = new Set(state.analysis.log1p_features);
+  const logItems = items.filter(item => logIds.has(item.id)).map(item => ({
+    ...item,
+    label: `${item.label} · log1p`,
+    values: item.values.map(value => Math.log1p(Math.max(0, Number(value)))),
+  }));
+  const speed = items.find(item => item.id === "скорость_магистрали_B_кмч")
+    || items.find(item => item.label.toLowerCase().includes("скорость"));
+  return [
+    { title: "Современная городская среда", source: "Pipeline · cell 5", items: byGroup("Современная городская среда") },
+    { title: "Дорожно-транспортный комплекс", source: "Pipeline · cell 6", items: byGroup("Дорожно-транспортный комплекс") },
+    { title: "Доступная среда", source: "Pipeline · cell 7", items: accessible.slice(0, 2) },
+    { title: "Адресная поддержка", source: "Pipeline · cell 8", items: accessible.slice(2) },
+    { title: "Общественные пространства", source: "Pipeline · cell 9", items: byGroup("Общественные пространства") },
+    { title: "Городской общественный транспорт", source: "Pipeline · cell 10", items: byGroup("Городской общественный транспорт") },
+    { title: "Парковки и безопасность движения", source: "Pipeline · cell 11", items: byGroup("Парковки и безопасность движения") },
+    { title: "Логарифмированные показатели", source: "Pipeline · cell 13", items: logItems },
+    { title: "Контроль выброса средней скорости", source: "Исторический Pipeline · cell 15", items: speed ? [speed] : [] },
+  ].filter(group => group.items.length);
+}
+
+function renderArchiveMembershipIndex(detail, membershipIndex) {
+  if (detail.dataset.rendered === "true") {
+    resizeSectionVisuals(detail);
+    return;
+  }
+  const membership = state.analysis.memberships[membershipIndex];
+  const grid = detail.querySelector(".archive-membership-grid");
+  grid.innerHTML = membership.variables.map((variable, variableIndex) => `
+    <article class="panel chart-panel">
+      <span class="panel-kicker">${escapeHtml(variable.kind === "output" ? "Выход" : "Вход")}</span>
+      <h3>${escapeHtml(variable.label)}</h3>
+      <div id="archiveMembership-${membershipIndex}-${variableIndex}" class="plot"></div>
+    </article>`).join("");
+  membership.variables.forEach((variable, variableIndex) => {
+    const shapes = (variable.quantiles || []).map((value, index) => ({
+      type: "line", x0: value, x1: value, y0: 0, y1: 1,
+      line: { color: [colors.gold, colors.ink, colors.coral][index], width: index === 1 ? 2 : 1, dash: "dash" },
+    }));
+    Plotly.react(`archiveMembership-${membershipIndex}-${variableIndex}`, membershipTraces(variable), {
+      ...baseLayout,
+      height: 280,
+      margin: { l: 48, r: 12, t: 22, b: 50 },
+      xaxis: { ...baseLayout.xaxis, title: variable.label },
+      yaxis: { ...baseLayout.yaxis, title: "принадлежность", range: [0, 1.05] },
+      shapes,
+    }, plotConfig);
+  });
+  detail.dataset.rendered = "true";
+  resizeSectionVisuals(detail);
+  refreshLayoutManager();
+}
+
+function renderRecoveredCharts() {
+  if (state.recoveredChartsRendered || !state.analysis || !state.history) return;
+  state.recoveredChartsRendered = true;
+
+  const boxplotGroups = archiveBoxplotDefinitions();
+  const boxplotGrid = document.getElementById("archiveBoxplotGrid");
+  boxplotGrid.innerHTML = boxplotGroups.map((group, index) => `
+    <article class="panel chart-panel">
+      <span class="panel-kicker">${escapeHtml(group.source)}</span><h3>${escapeHtml(group.title)}</h3>
+      <div id="archiveBoxplot-${index}" class="plot"></div>
+    </article>`).join("");
+  boxplotGroups.forEach((group, index) => {
+    const traces = group.items.map(item => ({
+      y: item.values, name: item.label, type: "box", boxpoints: "outliers",
+      marker: { color: colors.teal, outliercolor: colors.coral, size: 4 },
+      line: { color: colors.teal }, fillcolor: "rgba(11,111,104,.16)",
+      hovertemplate: `${item.label}<br>%{y:.3f}<extra></extra>`,
+    }));
+    Plotly.react(`archiveBoxplot-${index}`, traces, {
+      ...baseLayout, height: 330, showlegend: false,
+      margin: { l: 55, r: 18, t: 24, b: 105 },
+      xaxis: { ...baseLayout.xaxis, tickangle: -28, automargin: true },
+      yaxis: { ...baseLayout.yaxis, title: "значение" },
+    }, plotConfig);
+  });
+
+  const historySeries = new Map(state.history.series.map(series => [series.id, series]));
+  const indexSeries = state.analysis.memberships
+    .map(item => ({ ...item, values: historySeries.get(item.id)?.values }))
+    .filter(item => item.values);
+  const target = historySeries.get("pipeline_target");
+  const targetValues = target?.values || state.analysis.target || [];
+  const targetMean = mean(targetValues);
+  const targetStd = Math.sqrt(mean(targetValues.map(value => (Number(value) - targetMean) ** 2)));
+
+  Plotly.react("archiveIndexDistributionPlot", [{
+    x: targetValues, type: "histogram", nbinsx: 15,
+    marker: { color: "rgba(11,111,104,.66)", line: { color: colors.teal, width: 1 } },
+    hovertemplate: "Индекс %{x:.2f}<br>Наблюдений %{y}<extra></extra>",
+  }], {
+    ...baseLayout, height: 340, showlegend: false,
+    margin: { l: 48, r: 18, t: 24, b: 48 },
+    xaxis: { ...baseLayout.xaxis, title: "итоговый индекс" },
+    yaxis: { ...baseLayout.yaxis, title: "частота" },
+    shapes: [
+      { type: "line", x0: targetMean, x1: targetMean, y0: 0, y1: 1, yref: "paper", line: { color: colors.coral, width: 2, dash: "dash" } },
+      { type: "line", x0: targetMean - targetStd, x1: targetMean - targetStd, y0: 0, y1: 1, yref: "paper", line: { color: colors.gold, width: 1, dash: "dot" } },
+      { type: "line", x0: targetMean + targetStd, x1: targetMean + targetStd, y0: 0, y1: 1, yref: "paper", line: { color: colors.gold, width: 1, dash: "dot" } },
+    ],
+  }, plotConfig);
+
+  const correlationSeries = [...indexSeries, { id: "pipeline_target", label: "Target Pipeline", values: targetValues }];
+  const correlationMatrix = correlationSeries.map(row => correlationSeries.map(column => pearson(row.values, column.values)));
+  Plotly.react("archiveCorrelationPlot", [{
+    x: correlationSeries.map(item => item.label),
+    y: correlationSeries.map(item => item.label),
+    z: correlationMatrix,
+    type: "heatmap", zmin: -1, zmax: 1, zmid: 0,
+    colorscale: [[0, colors.blue], [0.5, "#f5f1e8"], [1, colors.coral]],
+    colorbar: { title: "r", thickness: 12 },
+    hovertemplate: "%{y}<br>%{x}<br>r = %{z:.3f}<extra></extra>",
+  }], {
+    ...baseLayout, height: 430,
+    margin: { l: 155, r: 20, t: 20, b: 150 },
+    xaxis: { tickangle: -38, automargin: true },
+    yaxis: { automargin: true, autorange: "reversed" },
+  }, plotConfig);
+
+  const correlations = indexSeries.map(item => ({ ...item, value: pearson(item.values, targetValues) }))
+    .sort((left, right) => Math.abs(left.value) - Math.abs(right.value));
+  Plotly.react("archiveFeatureImportancePlot", [{
+    x: correlations.map(item => item.value),
+    y: correlations.map(item => item.label),
+    type: "bar", orientation: "h",
+    marker: { color: correlations.map(item => item.value >= 0 ? colors.teal : colors.coral) },
+    text: correlations.map(item => formatNumber(item.value, 3)), textposition: "outside",
+    hovertemplate: "%{y}<br>Корреляция: %{x:.3f}<extra></extra>",
+  }], {
+    ...baseLayout, height: 390, showlegend: false,
+    margin: { l: 190, r: 52, t: 20, b: 48 },
+    xaxis: { ...baseLayout.xaxis, title: "корреляция с target", range: [-1, 1], zeroline: true, zerolinecolor: colors.ink },
+    yaxis: { automargin: true },
+  }, plotConfig);
+
+  const densityTraces = indexSeries.map(item => {
+    const density = kde(item.values);
+    return {
+      x: density.x, y: density.y, name: item.label, type: "scatter", mode: "lines",
+      line: { width: 2 }, hovertemplate: `${item.label}<br>z=%{x:.2f}<br>Плотность=%{y:.3f}<extra></extra>`,
+    };
+  });
+  Plotly.react("archiveDensityPlot", densityTraces, {
+    ...baseLayout, height: 390,
+    margin: { l: 50, r: 18, t: 20, b: 48 },
+    xaxis: { ...baseLayout.xaxis, title: "стандартизированное значение" },
+    yaxis: { ...baseLayout.yaxis, title: "плотность" },
+    legend: { orientation: "h", y: -0.32, x: 0 },
+  }, plotConfig);
+
+  const histogramGrid = document.getElementById("archiveFeatureHistogramGrid");
+  histogramGrid.innerHTML = state.analysis.boxplots.map((item, index) => `
+    <article class="panel chart-panel">
+      <span class="panel-kicker">${escapeHtml(item.group)}</span><h3>${escapeHtml(item.label)}</h3>
+      <div id="archiveHistogram-${index}" class="plot"></div>
+    </article>`).join("");
+  state.analysis.boxplots.forEach((item, index) => {
+    const itemMean = mean(item.values);
+    const itemMedian = median(item.values);
+    Plotly.react(`archiveHistogram-${index}`, [{
+      x: item.values, type: "histogram", nbinsx: 18,
+      marker: { color: "rgba(58,117,167,.62)", line: { color: colors.blue, width: 1 } },
+      hovertemplate: "Значение %{x:.3f}<br>Частота %{y}<extra></extra>",
+    }], {
+      ...baseLayout, height: 260, showlegend: false,
+      margin: { l: 42, r: 10, t: 18, b: 43 },
+      xaxis: { ...baseLayout.xaxis, title: item.label },
+      yaxis: { ...baseLayout.yaxis, title: "частота" },
+      shapes: [
+        { type: "line", x0: itemMean, x1: itemMean, y0: 0, y1: 1, yref: "paper", line: { color: colors.coral, width: 2, dash: "dash" } },
+        { type: "line", x0: itemMedian, x1: itemMedian, y0: 0, y1: 1, yref: "paper", line: { color: colors.teal, width: 2, dash: "dot" } },
+      ],
+    }, plotConfig);
+  });
+
+  const membershipList = document.getElementById("archiveMembershipList");
+  membershipList.innerHTML = state.analysis.memberships.map((membership, index) => `
+    <details class="archive-membership-index" data-membership-index="${index}">
+      <summary>${escapeHtml(membership.label)} · ${membership.variables.length} переменных</summary>
+      <div class="archive-membership-grid"></div>
+    </details>`).join("");
+  membershipList.querySelectorAll(".archive-membership-index").forEach(detail => {
+    detail.addEventListener("toggle", () => {
+      if (detail.open) renderArchiveMembershipIndex(detail, Number(detail.dataset.membershipIndex));
+    });
+  });
+  document.querySelectorAll(".recovered-chart-group").forEach(detail => {
+    detail.addEventListener("toggle", () => {
+      if (detail.open) resizeSectionVisuals(detail);
+    });
+  });
+  refreshLayoutManager();
 }
 
 function renderAnfisCards() {
@@ -1101,6 +2338,7 @@ function renderScenarioControls(selectedReference = null) {
     indexRecalculationTimer = setTimeout(() => runScenario(), 250);
   }));
   applySelectedScenario();
+  renderLegacyScenarioWorkbench();
 }
 
 function applySelectedScenario() {
@@ -1121,6 +2359,7 @@ function applySelectedScenario() {
     input.value = scenario.index_values?.[input.dataset.index] ?? state.baseIndexValues[input.dataset.index];
     document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
   });
+  syncLegacyScenarioWorkbench();
 }
 
 function resetSliders() {
@@ -1128,6 +2367,7 @@ function resetSliders() {
     input.value = state.baseIndexValues[input.dataset.index];
     document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
   });
+  syncLegacyScenarioWorkbench();
   runScenario();
 }
 
@@ -1288,6 +2528,7 @@ function renderImprovementRecommendations(score = null) {
   status.innerHTML = `<strong>${interpretation.category} -</strong><span>${interpretation.description} ${interpretation.action}</span>`;
   document.getElementById("recommendationList").innerHTML = "";
   document.getElementById("recommendationMethodology").textContent = "";
+  renderLegacyRecommendations();
 }
 
 function applyRecommendedMeasure(factor) {
@@ -1334,7 +2575,8 @@ function renderBudgetAnalysis() {
     transport_accessibility: "accessibility",
     integrated_mobility: "integrated_mobility",
   };
-  const objective = objectiveMap[document.getElementById("customerObjective").value];
+  const objective = document.getElementById("legacyBudgetObjective")?.value
+    || objectiveMap[document.getElementById("customerObjective").value];
   const programs = [...state.budgetAnalysis.programs].sort((a, b) =>
     (b.metrics[objective].relative_change_percent ?? -Infinity) - (a.metrics[objective].relative_change_percent ?? -Infinity));
   const names = { safety: "безопасности", regularity: "регулярности", accessibility: "доступности", integrated_mobility: "сбалансированного индекса" };
@@ -1386,7 +2628,11 @@ async function runScenario() {
       ? result.applied_impulses.map(item => `<span class="tag">${item.label}: ${item.value > 0 ? "+" : ""}${item.value.toFixed(2)}</span>`).join("")
       : '<span class="tag">Без внешних импульсов</span>';
   } catch (error) { showToast(error.message, true); }
-  finally { button.disabled = false; button.textContent = "Запустить прогноз"; }
+  finally {
+    button.disabled = false;
+    button.textContent = "Запустить прогноз";
+    syncLegacyScenarioWorkbench();
+  }
 }
 
 function renderSensitivity() {
@@ -1485,13 +2731,25 @@ async function initializeApplication() {
       api("/api/health"), api("/api/metadata"), api("/api/history"), api("/api/indices"), api("/api/evaluation"), api("/api/analysis"), api("/api/scenarios"), api("/api/datasets"), api("/api/models/status"),
     ]);
     Object.assign(state, { metadata, history, indices, evaluation, analysis, datasets, modelStatus, scenarios: scenarios.scenarios });
+    state.recoveredChartsRendered = false;
     status.className = "status-pill ready"; status.setAttribute("aria-label", `Готово · ${health.periods} кварталов`); status.innerHTML = "<span></span>";
     renderOverview();
     renderScenarioControls(); bindEvents();
     fillSelect(document.getElementById("historyMetric"), state.history.series); document.getElementById("historyMetric").value = "pipeline_target";
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
-    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective();
+    renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective(); renderLegacyExpertInterfaces();
+    refreshLayoutManager();
+    const appendix = document.getElementById("technicalAppendix");
+    if (appendix?.querySelector(":scope > .accordion-toggle")?.getAttribute("aria-expanded") === "true") {
+      renderRecoveredCharts();
+      const hashTarget = window.location.hash
+        ? document.getElementById(window.location.hash.slice(1))
+        : null;
+      if (hashTarget && (hashTarget === appendix || appendix.contains(hashTarget))) {
+        window.requestAnimationFrame(() => hashTarget.scrollIntoView({ block: "start" }));
+      }
+    }
     const remembered = window.localStorage.getItem("smolensk.activeDataset");
     const initialDataset = state.datasets.datasets.some(item => item.name === remembered)
       ? remembered
@@ -1506,6 +2764,12 @@ async function initializeApplication() {
       if (!state.cy || state.cy.nodes().length === 0) renderFcm().catch(error => showToast(error.message, true));
     }, 450);
     await runScenario();
+    if (window.location.hash) {
+      const finalHashTarget = document.getElementById(window.location.hash.slice(1));
+      if (finalHashTarget) {
+        window.requestAnimationFrame(() => finalHashTarget.scrollIntoView({ block: "start", behavior: "instant" }));
+      }
+    }
   } catch (error) {
     status.className = "status-pill error"; status.setAttribute("aria-label", "Ошибка запуска"); status.innerHTML = "<span></span>";
     showToast(`Не удалось запустить интерфейс: ${error.message}`, true); console.error(error);
@@ -1514,6 +2778,8 @@ async function initializeApplication() {
 
 async function bootstrap() {
   initializePageStructure();
+  initializeLegacyInterfaces();
+  initializeLayoutManager();
   await initializeApplication();
 }
 
