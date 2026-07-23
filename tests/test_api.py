@@ -44,6 +44,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(len(scenario.json()["forecast"]), 8)
         self.assertEqual(len(scenario.json()["recommendations"]), 3)
 
+    def test_customer_prediction_uses_anfis_instead_of_fcm(self) -> None:
+        script_response = self.client.get("/assets/app.js")
+        self.assertEqual(script_response.status_code, 200)
+        script = script_response.text
+        start = script.index("async function runScenario()")
+        end = script.index("\nfunction renderSensitivity()", start)
+        run_scenario = script[start:end]
+        self.assertIn('api("/api/anfis/scenario"', run_scenario)
+        self.assertNotIn('api("/api/simulate"', run_scenario)
+
+        baseline = self.client.post("/api/anfis/scenario", json={"index_values": {}, "horizon": 1}).json()
+        zero_values = {item["id"]: 0.0 for item in baseline["inputs"]}
+        zero = self.client.post(
+            "/api/anfis/scenario",
+            json={"index_values": zero_values, "horizon": 1},
+        )
+        self.assertEqual(zero.status_code, 200, zero.text)
+        self.assertEqual(zero.json()["scenario_prediction"], 0.0)
+
     def test_auth_and_admin_routes_are_removed(self) -> None:
         self.assertEqual(self.client.get("/api/auth/me").status_code, 404)
         self.assertEqual(self.client.get("/api/admin/users").status_code, 404)
