@@ -116,7 +116,7 @@ function initializePageStructure() {
     heading.querySelector(".section-index").textContent = item.index;
     heading.querySelector("h2").textContent = item.title;
 
-    if (item.id === "map") return;
+    if (item.id === "map" || item.id === "datasets") return;
 
     const help = document.createElement("span");
     help.className = "section-help";
@@ -422,12 +422,14 @@ function renderAnalysis() {
 function renderDatasetCatalog() {
   const select = document.getElementById("datasetSelect");
   const defaultDataset = "smolensk_dataset_shared.xlsx";
-  const selected = state.datasets.datasets.some(item => item.name === defaultDataset)
-    ? defaultDataset
-    : (select.value || state.datasets.active);
+  const remembered = window.localStorage.getItem("smolensk.activeDataset");
+  const selected = state.datasets.datasets.some(item => item.name === remembered)
+    ? remembered
+    : (state.datasets.datasets.some(item => item.name === defaultDataset) ? defaultDataset : (select.value || state.datasets.active));
   select.innerHTML = state.datasets.datasets.map(item =>
     `<option value="${escapeHtml(item.name)}">${item.active ? "● " : ""}${escapeHtml(item.name)} · ${item.rows} строк</option>`).join("");
   select.value = state.datasets.datasets.some(item => item.name === selected) ? selected : state.datasets.active;
+  window.localStorage.setItem("smolensk.activeDataset", select.value);
 }
 
 function datasetRowValues() {
@@ -456,6 +458,7 @@ function renderTrainingStatus() {
   if (!state.modelStatus) return;
   const card = document.querySelector(".retraining-card");
   const button = document.getElementById("retrainModels");
+  if (!card || !button || !document.getElementById("modelTrainingStatus")) return;
   card.classList.toggle("pending", state.modelStatus.pending_retrain);
   card.classList.toggle("ready", !state.modelStatus.pending_retrain);
   document.getElementById("modelTrainingStatus").textContent = state.modelStatus.pending_retrain
@@ -468,8 +471,7 @@ function renderDatasetDetail() {
   const detail = state.datasetDetail;
   const dataset = state.datasets.datasets.find(item => item.name === detail.name);
   document.getElementById("datasetSummary").innerHTML = `<strong>${dataset?.active ? "Активный источник расчёта" : "Файл открыт только для просмотра"}</strong>
-    <span>${detail.rows} строк · ${escapeHtml(detail.first_period)}–${escapeHtml(detail.last_period)}</span>
-    <small>${dataset?.active ? "Все графики и рекомендации рассчитаны по этому файлу." : "Нажмите «Использовать для расчёта», чтобы переключить модель."}</small>`;
+    <span>${detail.rows} строк · ${escapeHtml(detail.first_period)}–${escapeHtml(detail.last_period)}</span>`;
 
   const groups = [];
   detail.columns.forEach(column => {
@@ -689,10 +691,27 @@ async function renderFcm() {
     const target = state.metadata.nodes.find(node => node.id === edge.target);
     document.getElementById("edgeInspector").innerHTML = `<span class="panel-kicker">Инспектор связи</span><h3>${source.label} → ${target.label}</h3><p>${edge.weight >= 0 ? "Положительное" : "Отрицательное"} влияние. Вес в режиме «${mode}»: ${edge.weight > 0 ? "+" : ""}${edge.weight.toFixed(3)}.</p>`;
   });
-  const fit = () => { if (state.cy) { state.cy.resize(); state.cy.fit(undefined, 36); } };
+  const fit = () => {
+    if (!state.cy) return;
+    state.cy.resize();
+    state.cy.layout({ name: "cose", animate: false, padding: 38, nodeRepulsion: 520000, idealEdgeLength: 110 }).run();
+    state.cy.fit(undefined, 36);
+  };
   fit();
   window.requestAnimationFrame(fit);
   window.setTimeout(fit, 120);
+}
+
+async function exportDataset() {
+  if (!state.datasetDetail) return;
+  const response = await fetch(`/api/datasets/${encodeURIComponent(state.datasetDetail.name)}/download`);
+  if (!response.ok) throw new Error("Не удалось выгрузить XLSX");
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = state.datasetDetail.name;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function scenarioReference(scenario) { return scenario.id; }
@@ -773,6 +792,17 @@ function resetSliders() {
     document.getElementById(`value-${input.dataset.index}`).textContent = formatNumber(Number(input.value), 1);
   });
   runScenario();
+}
+
+async function loadIndicesFromXlsx() {
+  const indices = await api("/api/indices");
+  state.indices = indices;
+  state.baseIndexValues = Object.fromEntries(indexControls.map(([id]) => {
+    const item = state.indices.fuzzy.find(index => index.id === id);
+    return [id, Number(item.values.at(-1))];
+  }));
+  resetSliders();
+  showToast("Индексы загружены из активного XLSX");
 }
 
 function scenarioImpulsesFromControls() {
@@ -1059,6 +1089,7 @@ function bindEvents() {
   document.getElementById("scenarioMode").addEventListener("change", () => runScenario());
   document.getElementById("scenarioHorizon").addEventListener("change", () => runScenario());
   document.getElementById("resetSliders")?.addEventListener("click", resetSliders);
+  document.getElementById("loadIndicesFromXlsx")?.addEventListener("click", () => loadIndicesFromXlsx().catch(error => showToast(error.message, true)));
   document.getElementById("uploadScenario").addEventListener("click", uploadScenario);
   document.getElementById("saveScenario").addEventListener("click", saveScenario);
   document.getElementById("exportScenario").addEventListener("click", exportSelectedScenario);
@@ -1074,17 +1105,22 @@ function bindEvents() {
   document.getElementById("boxplotGroup").addEventListener("change", renderBoxplots);
   document.getElementById("membershipIndex").addEventListener("change", renderMembershipVariableOptions);
   document.getElementById("membershipVariable").addEventListener("change", renderMembershipPlot);
-  document.getElementById("datasetSelect").addEventListener("change", event => loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true)));
+  document.getElementById("datasetSelect").addEventListener("change", event => {
+    window.localStorage.setItem("smolensk.activeDataset", event.target.value);
+    loadDatasetDetail(event.target.value).catch(error => showToast(error.message, true));
+  });
   document.getElementById("uploadDataset").addEventListener("click", uploadDataset);
   document.getElementById("datasetRowSelect").addEventListener("change", event => populateDatasetRow(event.target.value));
   document.getElementById("activateDataset").addEventListener("click", activateDataset);
+  document.getElementById("saveDataset")?.addEventListener("click", saveDatasetRow);
+  document.getElementById("exportDataset")?.addEventListener("click", exportDataset);
   document.getElementById("newDatasetRow").addEventListener("click", () => {
     document.getElementById("datasetRowSelect").value = "__new__";
     populateDatasetRow("__new__");
     document.querySelector(".dataset-field-details").open = true;
   });
   document.getElementById("saveDatasetRow").addEventListener("click", saveDatasetRow);
-  document.getElementById("retrainModels").addEventListener("click", retrainModels);
+  document.getElementById("retrainModels")?.addEventListener("click", retrainModels);
 }
 
 async function initializeApplication() {
@@ -1101,14 +1137,19 @@ async function initializeApplication() {
     fillSelect(document.getElementById("evaluationTarget"), state.evaluation.targets);
     fillSelect(document.getElementById("sensitivityTarget"), state.evaluation.sensitivity_targets);
     renderHistory(); renderIndices(); renderModelGuide(); renderEvaluation(); renderAnfisCards(); renderSensitivity(); renderAnalysis(); renderNotebookPlots(); renderDatasetCatalog(); renderTrainingStatus(); syncCustomerObjective();
-    const initialDataset = state.datasets.datasets.some(item => item.name === "smolensk_dataset_shared.xlsx")
-      ? "smolensk_dataset_shared.xlsx"
-      : state.datasets.active;
+    const remembered = window.localStorage.getItem("smolensk.activeDataset");
+    const initialDataset = state.datasets.datasets.some(item => item.name === remembered)
+      ? remembered
+      : (state.datasets.datasets.some(item => item.name === "smolensk_dataset_shared.xlsx") ? "smolensk_dataset_shared.xlsx" : state.datasets.active);
     document.getElementById("datasetSelect").value = initialDataset;
+    window.localStorage.setItem("smolensk.activeDataset", initialDataset);
     await loadDatasetDetail(initialDataset);
     // Дождаться первого layout-прохода браузера: Cytoscape иначе получает нулевой контейнер.
     await new Promise(resolve => window.requestAnimationFrame(resolve));
     await renderFcm();
+    window.setTimeout(() => {
+      if (!state.cy || state.cy.nodes().length === 0) renderFcm().catch(error => showToast(error.message, true));
+    }, 450);
     await runScenario();
   } catch (error) {
     status.className = "status-pill error"; status.setAttribute("aria-label", "Ошибка запуска"); status.innerHTML = "<span></span>";

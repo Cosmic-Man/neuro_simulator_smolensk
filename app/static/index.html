@@ -151,7 +151,6 @@
       </div>
       <div class="panel map-panel">
         <div class="panel-toolbar">
-          <div><span class="panel-kicker">Интерактивная FCM</span><h3>Причинные связи: Транспортная доступность и безопасность городской мобильности</h3></div>
           <label>Веса<select id="fcmMode"><option value="adapted">Адаптированные</option><option value="expert">Экспертные</option></select></label>
         </div>
         <div class="map-layout">
@@ -206,6 +205,10 @@
               <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
             </div>
           </details>
+          <div class="index-actions">
+            <button id="resetSliders" class="mini-button" type="button">Сбросить</button>
+            <button id="loadIndicesFromXlsx" class="mini-button" type="button">Загрузить из XLSX</button>
+          </div>
           <div id="scenarioSliders" class="slider-list"></div>
           <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
@@ -306,26 +309,24 @@
     <section id="datasets" class="section-block">
       <div class="section-heading">
         <div><span class="section-index">04</span><h2>Данные для расчёта</h2></div>
-        <p>Выбор XLSX, проверка кварталов и добавление новых наблюдений</p>
       </div>
       <article class="panel retraining-card">
         <div>
-          <span class="panel-kicker">Следующий цикл решений</span>
-          <h3>Обновить модель после нового квартала <span class="info-tip" tabindex="0" data-tooltip="Рабочие ANFIS-модели и веса FCM заново обучаются на всех подтверждённых кварталах. Контрольные validation/test из notebook не меняются, поэтому качество можно сравнивать честно.">?</span></h3>
-          <p id="modelTrainingStatus">Проверяем, до какого квартала обучена модель…</p>
+          <h3>Обновить модель после нового квартала</h3>
         </div>
-        <button id="retrainModels" class="primary-button" type="button">Переобучить на новых данных</button>
       </article>
       <div class="dataset-layout">
         <article class="panel dataset-selector-card">
-          <span class="panel-kicker">Источник расчёта</span><h3>Какой датасет использовать</h3>
-          <p class="chart-description">Активный файл определяет все показатели, графики и рекомендации. Выбор применяется ко всей текущей демонстрации.</p>
           <div class="dataset-upload">
             <input id="datasetFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             <button id="uploadDataset" class="primary-button" type="button">Загрузить XLSX и пересчитать</button>
           </div>
-          <label>Файл из datasets_ready<select id="datasetSelect"></select></label>
+          <label><select id="datasetSelect" aria-label="Датасет"></select></label>
           <button id="activateDataset" class="primary-button" type="button">Использовать для расчёта</button>
+          <div class="dataset-actions">
+            <button id="saveDataset" class="mini-button" type="button">Сохранить XLSX</button>
+            <button id="exportDataset" class="mini-button" type="button">Выгрузить XLSX</button>
+          </div>
           <div id="datasetSummary" class="dataset-summary"></div>
         </article>
         <article class="panel dataset-editor-card">

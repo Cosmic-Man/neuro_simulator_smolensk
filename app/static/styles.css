@@ -83,6 +83,7 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
 #scenarios .scenario-controls { position: static; }
 #scenarios .slider-list { max-height: none; overflow: visible; }
+#scenarios .index-actions { display: flex; gap: 8px; margin: 8px 0; }
 #scenarios .slider-item { padding: 6px 0; }
 #scenarios .slider-meta { margin-bottom: 3px; }
 #scenarios .business-summary { margin: 0; }

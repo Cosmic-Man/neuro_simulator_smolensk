@@ -187,8 +187,9 @@ def _read_shared_dataset(path: Path) -> tuple[pd.DataFrame, list[dict[str, str]]
     if not path.exists():
         raise FileNotFoundError(f"Не найден файл данных: {path}")
     loaded = pd.read_excel(path, sheet_name="Лист1", header=[0, 1], engine="openpyxl")
-    if loaded.shape[0] < 80 or loaded.shape[1] != 37:
-        raise ValueError(f"Ожидалась таблица минимум 80×37, получено {loaded.shape[0]}×{loaded.shape[1]}")
+    expected_columns = len(FEATURE_NAMES) + 5
+    if loaded.shape[0] < 80 or loaded.shape[1] != expected_columns:
+        raise ValueError(f"Ожидалась таблица минимум 80×{expected_columns}, получено {loaded.shape[0]}×{loaded.shape[1]}")
 
     periods = loaded.iloc[:, 0].astype(str).tolist()
     if periods[:80] != EXPECTED_PERIODS:

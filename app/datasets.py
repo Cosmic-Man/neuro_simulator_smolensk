@@ -240,7 +240,6 @@ class DatasetStore:
                 sheet.cell(row_number, column, value)
             for feature, column in zip(FEATURE_NAMES, range(6, 37), strict=True):
                 sheet.cell(row_number, column, normalized[feature])
-            sheet.cell(row_number, 37, 0.0)
             return period
 
         return self._atomic_edit(name, edit, validator)

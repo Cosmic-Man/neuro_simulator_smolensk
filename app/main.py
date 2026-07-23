@@ -159,6 +159,19 @@ def datasets() -> dict[str, object]:
     return dataset_store.catalog(service.bundle.source_path.name)
 
 
+@app.get("/api/datasets/{name}/download")
+def download_dataset(name: str) -> FileResponse:
+    try:
+        path = dataset_store.path(name)
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=path.name,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise dataset_error(error) from error
+
+
 @app.get("/api/datasets/{name}")
 def dataset_detail(name: str) -> dict[str, object]:
     try:
