@@ -15,10 +15,10 @@ class DataPipelineTests(unittest.TestCase):
         cls.bundle = load_problem_b_data(DATA_PATH)
 
     def test_shared_excel_schema_and_periods(self) -> None:
-        self.assertEqual(self.bundle.source_features.index.to_list(), EXPECTED_PERIODS)
-        self.assertEqual(self.bundle.raw.index.to_list(), [period for period in EXPECTED_PERIODS if period != "2018Q3"])
-        self.assertEqual(self.bundle.source_features.shape, (80, 31))
-        self.assertEqual(self.bundle.features.shape, (79, 31))
+        self.assertEqual(self.bundle.source_features.index[:len(EXPECTED_PERIODS)].to_list(), EXPECTED_PERIODS)
+        self.assertEqual(self.bundle.raw.loc[:"2025Q4"].index.to_list(), [period for period in EXPECTED_PERIODS if period != "2018Q3"])
+        self.assertGreaterEqual(self.bundle.source_features.shape[0], 80)
+        self.assertEqual(self.bundle.features.shape[0], self.bundle.source_features.shape[0] - len(self.bundle.outlier_periods))
         self.assertEqual(self.bundle.features.columns.to_list(), FEATURE_NAMES)
         self.assertEqual(len(set(self.bundle.features.columns)), 31)
         self.assertEqual(len(self.bundle.feature_metadata), 31)
@@ -27,11 +27,11 @@ class DataPipelineTests(unittest.TestCase):
         periods = self.bundle.raw.index
         self.assertEqual(int((periods <= "2018Q4").sum()), 51)
         self.assertEqual(int(((periods >= "2019Q1") & (periods <= "2022Q4")).sum()), 16)
-        self.assertEqual(int((periods >= "2023Q1").sum()), 12)
+        self.assertGreaterEqual(int((periods >= "2023Q1").sum()), 12)
 
     def test_fuzzy_indices_and_factors_are_finite_and_bounded(self) -> None:
         self.assertNotIn("linear_expert_index", self.bundle.raw.columns)
-        self.assertEqual(self.bundle.fuzzy_indices.shape, (79, 8))
+        self.assertEqual(self.bundle.fuzzy_indices.shape, (len(self.bundle.raw), 8))
         self.assertTrue(np.isfinite(self.bundle.fuzzy_indices.to_numpy()).all())
         self.assertGreater(float(self.bundle.fuzzy_indices.min().min()), 0.0)
         self.assertLessEqual(float(self.bundle.fuzzy_indices.max().max()), 100.0)

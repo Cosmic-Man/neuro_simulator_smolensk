@@ -69,7 +69,7 @@ TARGETS = {
 MODEL_LABELS = {
     "seasonal_naive": "Seasonal Naive — сезонный повтор",
     "ridge": "Ridge Regression — лаговые признаки",
-    "anfis": "ANFIS — 6 нечётких правил",
+    "anfis": "ANFIS — 8 нечётких правил",
 }
 
 MODEL_CATALOG = {
@@ -87,8 +87,8 @@ MODEL_CATALOG = {
     },
     "anfis": {
         "role": "Основная модель Pipeline",
-        "how": "Объединяет шесть гауссовых правил Сугено и линейные выводы правил; параметры обучаются Adam.",
-        "inputs": "Восемь нечётких индексов квартала t после RobustScaler; целевая переменная — итоговый индекс квартала t+1.",
+        "how": "Объединяет восемь гауссовых правил Сугено и линейные выводы правил; параметры обучаются Adam.",
+        "inputs": "Шесть индексов Pipeline квартала t после объединения показателей ДТК и ГОТ и RobustScaler; целевая переменная — итоговый индекс квартала t+1.",
         "purpose": "Прогнозирует следующий квартал без использования его показателей и сравнивается с двумя временными baseline.",
     },
 }
@@ -395,9 +395,47 @@ class ProblemBService:
         }
 
     def _build_pipeline_evaluation(self) -> dict[str, Any]:
-        feature_names = [spec.id for spec in FUZZY_INDEX_SPECS]
+        feature_names = [
+            "urban_environment",
+            "road_quality_dtc",
+            "accessible_environment",
+            "public_spaces",
+            "road_quality_transit",
+            "parking_safety",
+        ]
         all_periods = self.bundle.fuzzy_indices.index.to_numpy(dtype=str)
-        all_x_raw = self.bundle.fuzzy_indices.loc[:, feature_names].to_numpy(dtype=float)
+        fuzzy = self.bundle.fuzzy_indices
+        pipeline_inputs = pd.DataFrame(
+            {
+                "urban_environment": fuzzy["urban_environment"],
+                "road_quality_dtc": (
+                    0.7 * fuzzy["road_wellbeing_dtc"] + 0.6 * fuzzy["road_quality_dtc"]
+                ) / 100.0,
+                "accessible_environment": fuzzy["accessible_environment"],
+                "public_spaces": fuzzy["public_spaces"],
+                "road_quality_transit": (
+                    0.9 * fuzzy["road_wellbeing_transit"] + 0.7 * fuzzy["road_quality_transit"]
+                ) / 100.0,
+                "parking_safety": fuzzy["parking_safety"],
+            },
+            index=fuzzy.index,
+        )
+        self.pipeline_display_inputs = pd.DataFrame(
+            {
+                "urban_environment": fuzzy["urban_environment"],
+                "road_quality_dtc": (
+                    0.7 * fuzzy["road_wellbeing_dtc"] + 0.6 * fuzzy["road_quality_dtc"]
+                ) / 1.3,
+                "accessible_environment": fuzzy["accessible_environment"],
+                "public_spaces": fuzzy["public_spaces"],
+                "road_quality_transit": (
+                    0.9 * fuzzy["road_wellbeing_transit"] + 0.7 * fuzzy["road_quality_transit"]
+                ) / 1.6,
+                "parking_safety": fuzzy["parking_safety"],
+            },
+            index=fuzzy.index,
+        )
+        all_x_raw = pipeline_inputs.loc[:, feature_names].to_numpy(dtype=float)
         all_y_raw = self.bundle.raw["pipeline_target"].to_numpy(dtype=float)
 
         # Прогноз на один квартал: JSON-индексы периода t предсказывают target t+1.
@@ -514,10 +552,129 @@ class ProblemBService:
                 for model_id, label in MODEL_LABELS.items()
             ],
             "note": (
-                "Прогноз без утечки: восемь JSON-индексов квартала t предсказывают target квартала t+1. "
+                "Прогноз без утечки: шесть индексов Pipeline квартала t предсказывают target квартала t+1. "
                 "Train заканчивается целью 2018Q4, validation — 2019–2022, test — 2023–2025. "
                 "RobustScaler обучается только на train; test не используется при обучении и настройке ANFIS."
             ),
+        }
+
+    def simulate_pipeline_index(
+        self,
+        index_values: Mapping[str, float] | None = None,
+        *,
+        horizon: int = DEFAULT_HORIZON,
+    ) -> dict[str, Any]:
+        """Прогнозирует итоговый индекс t+1 по шести входам Pipeline."""
+        horizon = int(horizon)
+        if not 1 <= horizon <= 20:
+            raise ValueError("Горизонт должен составлять от 1 до 20 кварталов")
+        labels = {
+            "urban_environment": "Индекс качества современной городской среды",
+            "road_quality_dtc": "Индекс качества ДТК",
+            "accessible_environment": "Индекс удовлетворённости доступной среды",
+            "public_spaces": "Индекс качества общественного благоустройства",
+            "road_quality_transit": "Индекс качества ГОТ",
+            "parking_safety": "Индекс качества парковок и безопасности движения",
+        }
+        baseline = {key: float(value) for key, value in self.pipeline_display_inputs.iloc[-1].items()}
+        supplied = dict(index_values or {})
+        unknown = set(supplied) - set(labels)
+        if unknown:
+            raise ValueError(f"Неизвестные индексы Pipeline: {sorted(unknown)}")
+        scenario = baseline.copy()
+        for key, value in supplied.items():
+            numeric = float(value)
+            if not np.isfinite(numeric) or not 0.0 <= numeric <= 100.0:
+                raise ValueError(f"Значение индекса {key} должно быть в диапазоне [0, 100]")
+            scenario[key] = numeric
+
+        def model_row(values: Mapping[str, float]) -> np.ndarray:
+            return np.asarray([[
+                values["urban_environment"],
+                values["road_quality_dtc"] * 1.3 / 100.0,
+                values["accessible_environment"],
+                values["public_spaces"],
+                values["road_quality_transit"] * 1.6 / 100.0,
+                values["parking_safety"],
+            ]], dtype=float)
+
+        def predict(values: Mapping[str, float]) -> float:
+            scaled = self.pipeline_x_scaler.transform(model_row(values))
+            predicted_scaled = self.pipeline_anfis.predict(scaled).reshape(-1, 1)
+            predicted = float(self.pipeline_y_scaler.inverse_transform(predicted_scaled)[0, 0])
+            return float(np.clip(predicted, 0.0, 100.0))
+
+        baseline_prediction = predict(baseline)
+        current_period = str(self.bundle.raw.index[-1])
+        forecast_rows = []
+        period = current_period
+        for step in range(1, horizon + 1):
+            progress = step / horizon
+            step_values = {
+                key: baseline[key] + (scenario[key] - baseline[key]) * progress
+                for key in labels
+            }
+            period = next_period(period)
+            forecast_rows.append({
+                "step": step,
+                "period": period,
+                "baseline": round(baseline_prediction, 5),
+                "scenario": round(predict(step_values), 5),
+            })
+        scenario_prediction = float(forecast_rows[-1]["scenario"])
+        delta = scenario_prediction - baseline_prediction
+        relative = None if abs(baseline_prediction) < 1e-12 else delta / abs(baseline_prediction) * 100.0
+
+        if scenario_prediction <= 20:
+            level = {"label": "Критический", "tone": "critical", "explanation": "Нужен срочный план восстановления сразу по нескольким направлениям."}
+        elif scenario_prediction <= 40:
+            level = {"label": "Низкий", "tone": "low", "explanation": "Сначала устраните наиболее слабые ограничения городской и транспортной среды."}
+        elif scenario_prediction <= 60:
+            level = {"label": "Удовлетворительный", "tone": "medium", "explanation": "Система работоспособна, но слабые индексы заметно ограничивают итоговый результат."}
+        elif scenario_prediction <= 80:
+            level = {"label": "Хороший", "tone": "good", "explanation": "Сосредоточьтесь на двух–трёх отстающих направлениях, чтобы закрепить рост."}
+        elif scenario_prediction <= 95:
+            level = {"label": "Отличный", "tone": "excellent", "explanation": "Поддерживайте достигнутый уровень и точечно улучшайте самый слабый индекс."}
+        else:
+            level = {"label": "Превосходный", "tone": "excellent", "explanation": "Резерв роста небольшой; приоритет — сохранить устойчивость результата."}
+
+        actions = {
+            "urban_environment": "Повысить исполнение программ благоустройства дворов и проверить удовлетворённость жителей.",
+            "road_quality_dtc": "Направить работы на ремонт и нормативное состояние дорог, одновременно сократив сроки устранения дефектов.",
+            "accessible_environment": "Увеличить число завершённых мероприятий и охват адресной поддержкой.",
+            "public_spaces": "Ускорить благоустройство общественных территорий и контролировать оценку жителей.",
+            "road_quality_transit": "Повысить регулярность рейсов, качество маршрутов и состояние инфраструктуры общественного транспорта.",
+            "parking_safety": "Приоритизировать безопасность движения, состояние дорог и быстрое устранение опасных дефектов.",
+        }
+        weakest = sorted(labels, key=lambda key: scenario[key])[:3]
+        recommendations = [
+            {
+                "rank": rank,
+                "index": key,
+                "label": labels[key],
+                "value": round(scenario[key], 2),
+                "action": actions[key],
+                "rule": "Индекс входит в три минимальных значения сценария.",
+            }
+            for rank, key in enumerate(weakest, start=1)
+        ]
+        return {
+            "model": "ANFIS",
+            "rule_count": self.pipeline_anfis.rule_count,
+            "input_period": current_period,
+            "forecast_period": period,
+            "horizon": horizon,
+            "current_target": round(float(self.bundle.raw["pipeline_target"].iloc[-1]), 5),
+            "baseline_prediction": round(baseline_prediction, 5),
+            "scenario_prediction": round(scenario_prediction, 5),
+            "delta_points": round(delta, 5),
+            "relative_change_percent": None if relative is None else round(relative, 5),
+            "baseline_values": {key: round(value, 5) for key, value in baseline.items()},
+            "scenario_values": {key: round(value, 5) for key, value in scenario.items()},
+            "inputs": [{"id": key, "label": label} for key, label in labels.items()],
+            "forecast": forecast_rows,
+            "level": level,
+            "recommendations": recommendations,
         }
 
     def _build_evaluation(self) -> dict[str, Any]:
@@ -566,7 +723,7 @@ class ProblemBService:
             "project": "Транспортная доступность и безопасность городской мобильности Смоленска",
             "problem": "Б",
             "source": self.bundle.source_path.name,
-            "canonical_notebook": "colab/colab_kirill/Pipeline.ipynb",
+            "canonical_notebook": "primer/Pipeline (2).ipynb",
             "dataset": {
                 "source_rows": len(self.bundle.source_features),
                 "rows": len(self.bundle.features),
@@ -741,7 +898,7 @@ class ProblemBService:
             memberships.append({"id": spec.id, "label": spec.label, "variables": variables})
 
         return {
-            "source": "colab/colab_kirill/Pipeline.ipynb",
+            "source": "primer/Pipeline (2).ipynb",
             "periods": periods,
             "source_rows": len(periods),
             "processed_rows": len(self.bundle.features),

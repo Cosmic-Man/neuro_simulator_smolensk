@@ -382,7 +382,7 @@ class RobustScaler:
 class PipelineANFIS:
     """NumPy-перенос архитектуры ANFIS из ``Pipeline.ipynb``.
 
-    Шесть гауссовых правил, общий sigma на правило и линейные консеквенты.
+    Восемь гауссовых правил, общий sigma на правило и линейные консеквенты.
     Параметры обучаются Adam с теми же основными гиперпараметрами notebook.
     """
 
@@ -390,7 +390,7 @@ class PipelineANFIS:
         self,
         feature_names: Sequence[str],
         *,
-        n_rules: int = 6,
+        n_rules: int = 8,
         epochs: int = 500,
         learning_rate: float = 0.05,
         patience: int = 70,
@@ -482,11 +482,11 @@ class PipelineANFIS:
         self.centers_ = self._kmeans(x_train)
         distances = np.linalg.norm(x_train[:, None, :] - self.centers_[None, :, :], axis=2)
         self.sigmas_ = np.clip(distances.mean(axis=0), 0.1, 1.5)
-        # Линейная регрессия X(t) -> y(t+1) даёт консеквентам устойчивую стартовую
-        # точку; Adam затем уточняет локальные правила по validation без доступа к test.
-        x_bias = np.column_stack([np.ones(len(x_train)), x_train])
-        linear_consequent = np.linalg.lstsq(x_bias, y_train, rcond=None)[0]
-        self.consequents_ = np.tile(linear_consequent, (self.n_rules, 1))
+        # Как в Pipeline (2).ipynb: небольшие случайные консеквенты и среднее train-target
+        # в свободном члене каждого правила. Фиксированный seed делает перенос воспроизводимым.
+        rng = np.random.RandomState(self.random_state)
+        self.consequents_ = rng.normal(0.0, 0.01, size=(self.n_rules, x_train.shape[1] + 1))
+        self.consequents_[:, 0] = float(y_train.mean())
 
         parameters = [self.centers_, self.sigmas_, self.consequents_]
         first_moments = [np.zeros_like(value) for value in parameters]

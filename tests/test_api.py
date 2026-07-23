@@ -38,6 +38,12 @@ class ApiTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 
+        scenario = self.client.post("/api/anfis/scenario", json={"index_values": {}})
+        self.assertEqual(scenario.status_code, 200)
+        self.assertEqual(len(scenario.json()["inputs"]), 6)
+        self.assertEqual(len(scenario.json()["forecast"]), 8)
+        self.assertEqual(len(scenario.json()["recommendations"]), 3)
+
     def test_auth_and_admin_routes_are_removed(self) -> None:
         self.assertEqual(self.client.get("/api/auth/me").status_code, 404)
         self.assertEqual(self.client.get("/api/admin/users").status_code, 404)

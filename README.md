@@ -1,6 +1,6 @@
 # Нейросимулятор Смоленска
 
-Локальный демонстрационный прототип для анализа городских показателей, сценарного моделирования FCM × ANFIS и подготовки рекомендаций заказчику. Основа расчётов — `colab/colab_kirill/Pipeline.ipynb` и JSON-правила из той же папки.
+Локальный демонстрационный прототип для анализа городских показателей, сценарного моделирования FCM × ANFIS и подготовки рекомендаций заказчику. Основа расчётов — `primer/Pipeline (2).ipynb` и JSON-правила из папки `ruls`.
 
 Проект намеренно упрощён:
 
@@ -18,7 +18,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Откройте `http://127.0.0.1:8000`. Логин и пароль не требуются. API: `http://127.0.0.1:8000/docs`.
@@ -28,7 +28,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```powershell
 cd "C:\Summer School\neuro_simulator_smolensk"
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ## Работа с XLSX

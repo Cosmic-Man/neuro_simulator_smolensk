@@ -131,11 +131,43 @@ RELATION_SCENARIOS: dict[str, dict[str, object]] = {
 BUILTIN_SCENARIOS: dict[str, dict[str, object]] = {
     "inertial": {
         "version": 1,
-        "label": "Инерционный · без импульсов",
-        "description": "Продолжение текущей динамики без внешнего импульса.",
+        "label": "Инерционный сценарий",
+        "description": "Темпы ремонта дорог, развитие общественного транспорта и цифровизация сохраняются без значительных изменений.",
         "mode": "adapted",
         "horizon": 8,
         "impulses": {},
+    },
+    "road_infrastructure_decline": {
+        "version": 1,
+        "label": "Ухудшение дорожной инфраструктуры",
+        "description": "Ремонт дорог замедляется, доля дорог в нормативном состоянии снижается, число аварийно-опасных участков растёт. Модель показывает последствия для аварийности, времени поездки и удовлетворённости.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"road_repair": -0.75, "road_condition": -0.75, "defect_response": -0.55},
+    },
+    "public_transport_priority": {
+        "version": 1,
+        "label": "Приоритет общественного транспорта",
+        "description": "Улучшаются регулярность движения, состояние остановок, маршрутная связанность и пассажиропоток. Модель оценивает снижение нагрузки на дороги и рост доступности социальных объектов.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"transit_budget_execution": 0.8, "transport_regularity": 0.8, "passenger_flow": 0.55},
+    },
+    "digital_mobility": {
+        "version": 1,
+        "label": "Цифровая мобильность",
+        "description": "Вводятся интеллектуальные светофоры, мониторинг потоков и цифровое управление маршрутами. Модель показывает, когда цифровые меры дают значимый эффект, а когда их ограничивает физическое состояние инфраструктуры.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"average_speed": 0.65, "congestion": -0.65, "transport_regularity": 0.35},
+    },
+    "traffic_safety_priority": {
+        "version": 1,
+        "label": "Безопасность движения",
+        "description": "Ресурсы направляются на освещение, пешеходную инфраструктуру, ликвидацию аварийно-опасных участков и организацию движения. Оценивается влияние на ДТП и воспринимаемую безопасность.",
+        "mode": "adapted",
+        "horizon": 8,
+        "impulses": {"safety_budget_execution": 0.8, "crossings": 0.85, "road_repair": 0.35},
     },
 }
 

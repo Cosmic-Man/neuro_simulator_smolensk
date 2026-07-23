@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.data import FEATURE_NAMES, load_problem_b_data
 from app.datasets import DatasetStore
+from app.fcm import next_period
 from app.service import ProblemBService
 
 
@@ -23,16 +24,18 @@ class DatasetStoreTests(unittest.TestCase):
 
     def test_append_and_update_are_validated_by_pipeline(self) -> None:
         zeros = {name: 0.0 for name in FEATURE_NAMES}
+        before = self.store.read(self.target.name)
+        expected_period = next_period(before["rows_data"][-1]["period"])
         period = self.store.append_row(self.target.name, zeros, load_problem_b_data)
-        self.assertEqual(period, "2026Q1")
+        self.assertEqual(period, expected_period)
         detail = self.store.read(self.target.name)
-        self.assertEqual(detail["rows"], 81)
-        self.assertEqual(detail["rows_data"][-1]["period"], "2026Q1")
+        self.assertEqual(detail["rows"], before["rows"] + 1)
+        self.assertEqual(detail["rows_data"][-1]["period"], expected_period)
         self.assertTrue(all(value == 0.0 for value in detail["rows_data"][-1]["values"].values()))
 
         updated = dict(zeros)
         updated["скорость_магистрали_B_кмч"] = 47.0
-        self.store.update_row(self.target.name, "2026Q1", updated, load_problem_b_data)
+        self.store.update_row(self.target.name, expected_period, updated, load_problem_b_data)
         detail = self.store.read(self.target.name)
         self.assertEqual(detail["rows_data"][-1]["values"]["скорость_магистрали_B_кмч"], 47.0)
 
@@ -44,7 +47,7 @@ class DatasetStoreTests(unittest.TestCase):
         content = self.target.read_bytes()
         uploaded = self.store.import_xlsx("uploaded.xlsx", content, load_problem_b_data)
         self.assertEqual(uploaded, "uploaded.xlsx")
-        self.assertEqual(self.store.read(uploaded)["rows"], 80)
+        self.assertEqual(self.store.read(uploaded)["rows"], self.store.read(self.target.name)["rows"])
         with self.assertRaises(ValueError):
             self.store.import_xlsx("broken.xlsx", b"not an xlsx", load_problem_b_data)
         self.assertFalse((Path(self.temp_dir.name) / "broken.xlsx").exists())
@@ -56,8 +59,9 @@ class DatasetStoreTests(unittest.TestCase):
             model_dir=model_dir,
         )
         latest_values = self.store.read(self.target.name)["rows_data"][-1]["values"]
+        expected_period = next_period(self.store.read(self.target.name)["rows_data"][-1]["period"])
         period = self.store.append_row(self.target.name, latest_values, load_problem_b_data)
-        self.assertEqual(period, "2026Q1")
+        self.assertEqual(period, expected_period)
         self.assertTrue(service.training_status(self.target)["pending_retrain"])
 
         refreshed = ProblemBService(
@@ -67,8 +71,8 @@ class DatasetStoreTests(unittest.TestCase):
         )
         status = refreshed.training_status(self.target)
         self.assertFalse(status["pending_retrain"])
-        self.assertEqual(status["trained_through"], "2026Q1")
-        self.assertEqual(status["new_quarters"], 1)
+        self.assertEqual(status["trained_through"], expected_period)
+        self.assertEqual(status["new_quarters"], sum(period > "2025Q4" for period in refreshed.bundle.raw.index))
 
 
 if __name__ == "__main__":

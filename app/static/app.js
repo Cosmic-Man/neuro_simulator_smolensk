@@ -33,7 +33,7 @@ const baseLayout = {
 
 const customerGuide = [
   {
-    id: "scenarios", index: "01", title: "Лаборатория решений",
+    id: "scenarios", index: "01", title: "Предсказание индекса",
     explanation: "Выберите проблемную цель, получите пять мер, задайте воздействия и сравните ожидаемый эффект с инерционным вариантом.",
   },
   {
@@ -674,12 +674,12 @@ function fillScenarioSelect(select) {
 }
 
 const indexControls = [
-  ["urban_environment", "Индекс качества современной городской среды"],
-  ["road_quality_dtc", "Индекс качества ДТК"],
-  ["accessible_environment", "Индекс удовлетворённости доступной среды"],
-  ["public_spaces", "Индекс качества общественного благоустройства"],
-  ["road_quality_transit", "Индекс качества ГОТ"],
-  ["parking_safety", "Индекс качества парковок и безопасности движения"],
+  ["urban_environment", "Индекс качества современной городской среды", "Исполнение бюджета, благоустроенные дворы, удовлетворённость городской средой"],
+  ["road_quality_dtc", "Индекс качества ДТК", "Отремонтированные дороги, нормативное состояние дорог, пассажиропоток, средняя скорость, регулируемые переходы, исполнение бюджета, рейсы по расписанию, ДТП, срок устранения дефектов"],
+  ["accessible_environment", "Индекс качества доступной среды", "Исполнение бюджета, завершённые мероприятия, получатели адресной поддержки"],
+  ["public_spaces", "Индекс качества общественных пространств", "Исполнение бюджета, благоустроенные общественные территории, удовлетворённость городской средой"],
+  ["road_quality_transit", "Индекс качества ГОТ", "Отремонтированные дороги, нормативное состояние дорог, пассажиропоток, средняя скорость, регулируемые переходы, исполнение бюджета, рейсы по расписанию, ДТП, срок устранения дефектов"],
+  ["parking_safety", "Индекс качества парковок и безопасности движения", "Исполнение бюджета, отремонтированные дороги, нормативное состояние дорог, срок устранения дефектов"],
 ];
 
 let indexRecalculationTimer = null;
@@ -698,9 +698,9 @@ function renderScenarioControls(selectedReference = null) {
     const item = state.indices.fuzzy.find(index => index.id === id);
     return [id, Number(item.values.at(-1))];
   }));
-  const renderSlider = ([id, label]) => {
+  const renderSlider = ([id, label, description]) => {
     const value = state.baseIndexValues[id];
-    return `<div class="slider-item"><div class="slider-meta"><span>${escapeHtml(label)}</span><span id="value-${id}" class="slider-value">${formatNumber(value, 1)}</span></div><input type="range" min="0" max="100" step="0.1" value="${value}" data-index="${id}" aria-label="${escapeHtml(label)}: от 0 до 100"></div>`;
+    return `<div class="slider-item"><div class="slider-meta"><span>${escapeHtml(label)}<small class="slider-description">${escapeHtml(description)}</small></span><span id="value-${id}" class="slider-value">${formatNumber(value, 1)}</span></div><input type="range" min="0" max="100" step="0.1" value="${value}" data-index="${id}" aria-label="${escapeHtml(label)}: от 0 до 100"></div>`;
   };
   document.getElementById("scenarioSliders").innerHTML = indexControls.map(renderSlider).join("");
   document.querySelectorAll("#scenarioSliders input[data-index]").forEach(input => input.addEventListener("input", () => {
@@ -851,9 +851,11 @@ function renderBusinessSummary(result) {
     const trend = metric.delta_points > 0 ? "positive" : metric.delta_points < 0 ? "negative" : "neutral";
     const accident = key === "safety" && result.summary.accidents.improvement_percent != null
       ? `<span>Расчётное снижение ДТП: ${signed(result.summary.accidents.improvement_percent)}%</span>` : "";
+    const valueMarkup = key === "integrated_mobility"
+      ? `<strong>${formatNumber(metric.scenario)}</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${signed(metric.relative_change_percent)}%</small>`
+      : `<strong>${signed(metric.relative_change_percent)}%</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>`;
     return `<article class="panel business-kpi ${trend}" style="--accent:${color}">
-      <span>${label}</span><strong>${signed(metric.relative_change_percent)}%</strong>
-      <small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>${accident}
+      <span>${label}</span>${valueMarkup}${accident}
     </article>`;
   }).join("");
 }

@@ -60,10 +60,10 @@ class FuzzyAndHierarchicalTests(unittest.TestCase):
         for name, expected in expected_first.items():
             self.assertAlmostEqual(first[name], expected, places=5, msg=name)
         for name, expected in expected_last.items():
-            self.assertAlmostEqual(self.bundle.fuzzy_indices.iloc[-1][name], expected, places=5, msg=name)
+            self.assertAlmostEqual(self.bundle.fuzzy_indices.loc["2025Q4", name], expected, places=5, msg=name)
         self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[0], 14.5569163653, places=6)
-        self.assertAlmostEqual(self.bundle.raw["pipeline_target"].iloc[-1], 92.972871, places=5)
-        target = self.bundle.raw["pipeline_target"]
+        self.assertAlmostEqual(self.bundle.raw.loc["2025Q4", "pipeline_target"], 92.972871, places=5)
+        target = self.bundle.raw.loc[:"2025Q4", "pipeline_target"]
         self.assertAlmostEqual(target.mean(), 59.054564, places=5)
         self.assertAlmostEqual(target.std(), 21.833919, places=5)
         self.assertAlmostEqual(target.min(), 14.556916, places=5)

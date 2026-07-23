@@ -38,6 +38,11 @@ class SimulateRequest(BaseModel):
     index_values: dict[str, float] = Field(default_factory=dict)
 
 
+class PipelineScenarioRequest(BaseModel):
+    index_values: dict[str, float] = Field(default_factory=dict)
+    horizon: int = Field(default=8, ge=1, le=20)
+
+
 class DatasetSelectPayload(BaseModel):
     name: str
 
@@ -231,6 +236,14 @@ def fcm(mode: Literal["expert", "adapted"] = Query(default="adapted")) -> dict[s
 @app.get("/api/evaluation")
 def evaluation() -> dict[str, object]:
     return service.evaluation()
+
+
+@app.post("/api/anfis/scenario")
+def anfis_scenario(request: PipelineScenarioRequest) -> dict[str, object]:
+    try:
+        return service.simulate_pipeline_index(request.index_values, horizon=request.horizon)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.get("/api/scenarios")

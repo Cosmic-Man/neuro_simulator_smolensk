@@ -43,14 +43,14 @@ input:not([type="range"]):not([type="file"]):not([type="checkbox"]):focus { bord
 .ambient-two { width: 520px; height: 520px; left: -220px; top: 42%; background: radial-gradient(circle, rgba(226, 105, 79, .15), transparent 70%); }
 
 .hero { padding-top: 22px; }
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 12px 0; }
+.topbar { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 28px; padding: 12px 0; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
 .brand-mark { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--ink); border-radius: 50%; font-weight: 800; letter-spacing: -.04em; }
 .brand strong, .brand small { display: block; }
 .brand strong { font-size: 14px; text-transform: uppercase; letter-spacing: .1em; }
 .brand small { color: var(--muted); font-size: 13px; }
-.nav-links { display: flex; gap: 28px; font-size: 14px; }
+.nav-links { position: absolute; left: 50%; display: flex; gap: 28px; font-size: 14px; transform: translateX(-50%); }
 .nav-links a { text-decoration: none; color: var(--muted); transition: color .2s; }
 .nav-links a:hover { color: var(--ink); }
 .status-pill { display: grid; width: 12px; height: 12px; place-items: center; }
@@ -59,18 +59,39 @@ input:not([type="range"]):not([type="file"]):not([type="checkbox"]):focus { bord
 .status-pill.error span { background: var(--coral); }
 .form-error { min-height: 21px; margin: 12px 0 0; color: #a23b2e; font-size: 12px; }
 
-.hero-grid { display: grid; grid-template-columns: 1fr 350px; gap: 70px; align-items: end; min-height: 520px; padding: 70px 0 80px; }
+.hero-grid { display: grid; grid-template-columns: 1fr; gap: 70px; align-items: end; min-height: 520px; padding: 70px 0 80px; }
+.hero-grid > div:first-child { text-align: center; }
 .eyebrow, .panel-kicker { color: var(--teal); font-weight: 800; font-size: 19px; line-height: 1.3; letter-spacing: .06em; text-transform: uppercase; }
 h1 { margin: 16px 0 24px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(48px, 7vw, 86px); line-height: .96; letter-spacing: -.055em; font-weight: 500; }
 h1 em { color: var(--teal); font-weight: 400; }
-.hero-copy { max-width: 700px; color: var(--muted); font-size: 17px; }
-.hero-actions { display: flex; align-items: center; gap: 22px; margin-top: 32px; }
+.hero-copy { max-width: 700px; margin-right: auto; margin-left: auto; color: var(--muted); font-size: 17px; }
+.hero-actions { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 32px; }
+
+/* В разделе предсказания оставлены только шесть индексов и итоговый индекс. */
+#scenarios > .scenario-intro,
+#scenarios .section-help,
+#scenarios > .problem-focus,
+#scenarios .scenario-controls > div:first-child,
+#scenarios .scenario-controls > label,
+#scenarios .scenario-controls > p,
+#scenarios .scenario-controls > details,
+#scenarios .scenario-controls > .slider-heading button,
+#scenarios .scenario-controls > .full-button,
+#scenarios .scenario-results > *:not(.business-summary),
+#scenarios .business-summary-heading,
+#scenarios #businessKpis .business-kpi:not(:last-child) { display: none; }
+#scenarios .scenario-layout { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
+#scenarios .scenario-controls { position: static; }
+#scenarios .business-summary { margin: 0; }
+#scenarios #businessKpis { grid-template-columns: 1fr; }
+#scenarios .business-kpi { min-height: 240px; }
+#scenarios .business-kpi strong { font-size: 56px; }
 .primary-button { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--ink); color: #fff; text-decoration: none; cursor: pointer; transition: transform .2s, background .2s; }
 .primary-button:hover { transform: translateY(-2px); background: var(--teal); }
 .primary-button:disabled { opacity: .55; cursor: wait; transform: none; }
 .text-button { text-decoration: none; font-weight: 700; }
 .text-button span { color: var(--coral); }
-.method-card { padding: 28px; border-radius: var(--radius); color: #fff; background: var(--ink); box-shadow: var(--shadow); transform: rotate(1.2deg); }
+.method-card { padding: 28px; border-radius: var(--radius); color: #fff; background: var(--ink); box-shadow: var(--shadow); transform: rotate(1.2deg); text-align: center; }
 .method-badge { display: inline-block; padding: 6px 10px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; font-size: 12px; letter-spacing: .13em; }
 .method-card p { color: rgba(255,255,255,.72); margin: 28px 0; }
 .method-card dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0; }
@@ -230,11 +251,15 @@ th { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform
 .slider-heading small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
 .mini-button { padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
 .slider-list { max-height: 390px; overflow-y: auto; padding-right: 7px; }
-.slider-item { padding: 10px 0; border-top: 1px solid var(--line); }
+.slider-item { position: relative; padding: 10px 0; border-top: 1px solid var(--line); }
 .slider-meta { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; }
 .slider-meta span:first-child { color: var(--muted); }
 .slider-value { color: var(--teal); font-weight: 800; }
-input[type="range"] { width: 100%; accent-color: var(--teal); }
+.slider-meta > span:first-child { border-bottom: 1px dotted currentColor; cursor: help; }
+.slider-description { position: absolute; left: 0; top: calc(100% + 2px); z-index: 20; display: none; width: min(460px, 100%); margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: #fffdf8; box-shadow: 0 8px 20px rgba(17,42,43,.14); font-size: 11px; font-weight: 400; line-height: 1.35; }
+.slider-item:hover .slider-description, .slider-item:focus-within .slider-description { display: block; }
+.slider-item:hover { z-index: 21; }
+input[type="range"] { width: 92%; accent-color: var(--teal); }
 .scenario-upload { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 14px 0; }
 .scenario-upload input[type="file"] { min-width: 0; color: var(--muted); font-size: 12px; }
 .scenario-upload .mini-button { padding: 8px 10px; }

@@ -43,8 +43,8 @@ class ModelTests(unittest.TestCase):
                 self.service.anfis_model_sources[target],
                 {"artifact", "trained_and_cached", "trained_in_memory"},
             )
-        self.assertEqual(len(self.service.pipeline_anfis.feature_names), 8)
-        self.assertEqual(self.service.pipeline_anfis.rule_count, 6)
+        self.assertEqual(len(self.service.pipeline_anfis.feature_names), 6)
+        self.assertEqual(self.service.pipeline_anfis.rule_count, 8)
         self.assertTrue(math.isfinite(self.service.pipeline_anfis.validation_rmse_))
         status = self.service.training_status()
         self.assertEqual(status["trained_through"], self.service.bundle.raw.index[-1])
@@ -117,6 +117,21 @@ class ModelTests(unittest.TestCase):
         anfis_metrics = [row for row in target["metrics"] if row["model"] == "anfis"]
         self.assertTrue(all(row["rmse"] > 1e-9 for row in anfis_metrics))
 
+    def test_six_pipeline_controls_predict_final_index(self) -> None:
+        baseline = self.service.simulate_pipeline_index(horizon=4)
+        self.assertEqual(baseline["rule_count"], 8)
+        self.assertEqual(len(baseline["inputs"]), 6)
+        self.assertEqual(len(baseline["forecast"]), 4)
+        self.assertEqual(baseline["forecast"][-1]["period"], baseline["forecast_period"])
+        self.assertEqual(len(baseline["recommendations"]), 3)
+        self.assertIn("label", baseline["level"])
+        self.assertNotEqual(baseline["input_period"], baseline["forecast_period"])
+        self.assertAlmostEqual(baseline["baseline_prediction"], baseline["scenario_prediction"])
+        values = dict(baseline["baseline_values"])
+        values["urban_environment"] = max(0.0, values["urban_environment"] - 10.0)
+        changed = self.service.simulate_pipeline_index(values)
+        self.assertNotEqual(changed["scenario_prediction"], changed["baseline_prediction"])
+
     def test_scenario_directions_are_plausible(self) -> None:
         safety = self.service.simulate("inertial", custom_impulses={"safety_budget_execution": 1.0})
         self.assertGreater(safety["scenario_result"][-1]["safety_index"], safety["baseline"][-1]["safety_index"])
@@ -151,8 +166,11 @@ class ModelTests(unittest.TestCase):
         roads = self.service.simulate("inertial", custom_impulses={"road_budget_execution": 1.0})
         self.assertGreater(roads["scenario_result"][-1]["accessibility"], roads["baseline"][-1]["accessibility"])
 
-    def test_only_inertial_builtin_scenario_is_available(self) -> None:
-        self.assertEqual(list(BUILTIN_SCENARIOS), ["inertial"])
+    def test_five_builtin_scenarios_are_available(self) -> None:
+        self.assertEqual(list(BUILTIN_SCENARIOS), [
+            "inertial", "road_infrastructure_decline", "public_transport_priority",
+            "digital_mobility", "traffic_safety_priority",
+        ])
 
     def test_unknown_node_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

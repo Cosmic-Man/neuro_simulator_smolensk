@@ -11,6 +11,7 @@
   <script defer src="/assets/app.js?v=20260723-map-last-menu"></script>
 </head>
 <body>
+  <span id="nodeCount" hidden></span><span id="edgeCount" hidden></span><span id="scenarioCount" hidden></span>
   <div id="appShell">
   <div class="ambient ambient-one"></div>
   <div class="ambient ambient-two"></div>
@@ -32,22 +33,8 @@
     <div class="hero-grid">
       <div>
         <div id="heroEyebrow" class="eyebrow">Аналитический прототип · 2006–2025</div>
-        <h1 id="heroTitle">Транспортная доступность<br><em>и безопасность города</em></h1>
-        <p id="heroCopy" class="hero-copy">Объяснимая модель объединяет квартальные данные, нечёткую когнитивную карту и ANFIS. Меняйте управляемые факторы и смотрите, как сценарий влияет на ДТП, регулярность транспорта и доступность.</p>
-        <div class="hero-actions">
-          <a id="heroPrimaryAction" class="primary-button" href="#scenarios">Запустить сценарий</a>
-          <a class="text-button" href="#technicalAppendix">Открыть графики и методику <span>→</span></a>
-        </div>
+        <h1 id="heroTitle">Транспортная доступность<br><em>и безопасность городской мобильности</em></h1>
       </div>
-      <aside class="method-card">
-        <div class="method-badge">FCM × ANFIS</div>
-        <p>Экспертные причинные связи уточняются закономерностями данных, но не теряют исходный смысл и знак.</p>
-        <dl>
-          <div><dt id="nodeCount">16</dt><dd>узлов</dd></div>
-          <div><dt id="edgeCount">34</dt><dd>связей</dd></div>
-          <div><dt id="scenarioCount">12</dt><dd>базовых сценариев</dd></div>
-        </dl>
-      </aside>
     </div>
   </header>
 
@@ -182,8 +169,7 @@
 
     <section id="scenarios" class="section-block">
       <div class="section-heading">
-        <div><span class="section-index">06</span><h2>Лаборатория сценариев</h2></div>
-        <p>Одна проблема → пять мер → проверка ожидаемого эффекта</p>
+        <div><span class="section-index">06</span><h2>Предсказание индекса</h2></div>
       </div>
       <div class="panel problem-focus">
         <div>
@@ -222,7 +208,6 @@
               <label>Горизонт<select id="scenarioHorizon"><option value="4">4 квартала</option><option value="8" selected>8 кварталов</option><option value="12">12 кварталов</option><option value="20">20 кварталов</option></select></label>
             </div>
           </details>
-          <div class="slider-heading"><span>Индексы по данным Кирилла <small>от 0 до 100 · изменение сразу пересчитывает доступность</small></span><button id="resetSliders" class="mini-button" type="button">Вернуть значения XLSX</button></div>
           <div id="scenarioSliders" class="slider-list"></div>
           <button id="runScenario" class="primary-button full-button" type="button">Запустить прогноз</button>
         </aside>
