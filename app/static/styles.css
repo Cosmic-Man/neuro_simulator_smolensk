@@ -90,6 +90,14 @@ h1 em { color: var(--teal); font-weight: 400; }
 #scenarios #businessKpis { grid-template-columns: 1fr; }
 #scenarios .business-kpi { min-height: 180px; }
 #scenarios .business-kpi strong { font-size: 56px; }
+#scenarios .business-kpi.quality-critical { --quality-color: #c0392b; }
+#scenarios .business-kpi.quality-poor { --quality-color: #e67e22; }
+#scenarios .business-kpi.quality-satisfactory { --quality-color: #d4ac0d; }
+#scenarios .business-kpi.quality-good { --quality-color: #9abf3c; }
+#scenarios .business-kpi.quality-excellent { --quality-color: #4f9f46; }
+#scenarios .business-kpi.quality-superb { --quality-color: #218c45; }
+#scenarios .business-kpi[class*="quality-"] { border-top-color: var(--quality-color); }
+#scenarios .business-kpi[class*="quality-"] strong { color: var(--quality-color); }
 #scenarios .scenario-results > .recommendations-panel { display: block; margin-top: 10px; }
 #scenarios .scenario-results > .recommendations-panel { display: block !important; margin-top: 10px; }
 #scenarios #recommendationStatus { display: block !important; }

@@ -916,10 +916,15 @@ function renderBusinessSummary(result) {
     const trend = metric.delta_points > 0 ? "positive" : metric.delta_points < 0 ? "negative" : "neutral";
     const accident = key === "safety" && result.summary.accidents.improvement_percent != null
       ? `<span>Расчётное снижение ДТП: ${signed(result.summary.accidents.improvement_percent)}%</span>` : "";
+    const quality = key === "integrated_mobility" ? interpretQualityIndex(Number(metric.scenario)) : null;
+    const qualityClass = quality ? {
+      "Катастрофическое": "critical", "Плохое": "poor", "Удовлетворительное": "satisfactory",
+      "Хорошее": "good", "Отличное": "excellent", "Превосходное": "superb",
+    }[quality.category] : "";
     const valueMarkup = key === "integrated_mobility"
       ? `<strong>${formatNumber(metric.scenario)}</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${signed(metric.relative_change_percent)}%</small>`
       : `<strong>${signed(metric.relative_change_percent)}%</strong><small>${signed(metric.delta_points)} ${metric.delta_unit}<br>${formatNumber(metric.baseline)} → ${formatNumber(metric.scenario)}</small>`;
-    return `<article class="panel business-kpi ${trend}" style="--accent:${color}">
+    return `<article class="panel business-kpi ${trend} ${qualityClass ? `quality-${qualityClass}` : ""}" style="--accent:${color}">
       <span>${label}</span>${valueMarkup}${accident}
     </article>`;
   }).join("");
